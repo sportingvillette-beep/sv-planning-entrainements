@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Sporting Villette — Lanceur planning</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1c1f26;
+    --panel-border: #2b2f38;
+    --text: #e6e8eb;
+    --muted: #9aa1ab;
+    --accent: #3b82c4;
+    --accent-hover: #4c95d9;
+    --ok: #2f7d4f;
+    --warn: #a8452f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, Segoe UI, Arial, sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 10px; padding: 18px 20px; margin-bottom: 18px;
+  }
+  .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 14px; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  button, .btn-link {
+    background: var(--accent); color: #fff; border: none; border-radius: 7px;
+    padding: 11px 16px; font-size: 14px; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px; transition: background .15s;
+  }
+  button:hover, .btn-link:hover { background: var(--accent-hover); }
+  button:disabled { opacity: .5; cursor: wait; }
+  button.secondary { background: #2b2f38; }
+  button.secondary:hover { background: #383d48; }
+  .status { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; }
+  .status.error { color: #e07a63; }
+  .status.ok { color: #7fc99a; }
+  #result-panel { display: none; }
+  #result-toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  #result-name { font-size: 13px; color: var(--muted); margin-right: auto; }
+  #result-frame-wrap {
+    background: #fff; border-radius: 8px; overflow: auto; max-height: 70vh;
+    border: 1px solid var(--panel-border);
+  }
+  #result-content { padding: 16px; }
+  .footer-note { color: var(--muted); font-size: 12px; margin-top: 30px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<h1>🤾 Sporting Villette — Lanceur planning</h1>
+<div class="subtitle">Base équipes Google Sheet → génération des plannings en direct dans le navigateur</div>
+
+<div class="panel">
+  <h2>Base de données</h2>
+  <div class="btn-row">
+    <a class="btn-link" href="https://docs.google.com/spreadsheets/d/1viw-QLYXpA4jNV_bHhfCsBtJ8ueaC0ujXfqtPPpIAq0/edit?usp=sharing" target="_blank" rel="noopener">📊 Ouvrir la base équipes (Google Sheet)</a>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Générer planning</h2>
+  <div class="btn-row">
+    <button onclick="generate('complet')">📅 Par équipe (complet)</button>
+    <button onclick="generate('minimal')">🌐 Par équipe (pour le site)</button>
+    <button onclick="generate('gymnase')">🏟️ Par gymnase</button>
+    <button class="secondary" onclick="location.reload()">🔄 Recharger la page</button>
+  </div>
+  <div id="status" class="status"></div>
+</div>
+
+<div class="panel" id="result-panel">
+  <div id="result-toolbar">
+    <span id="result-name"></span>
+    <button onclick="copyResult()">📋 Copier le HTML</button>
+    <button onclick="downloadResult()">⬇️ Télécharger .html</button>
+  </div>
+  <div id="result-frame-wrap">
+    <div id="result-content"></div>
+  </div>
+</div>
+
+<div class="footer-note">
+  Source des données : Google Sheet publié en CSV (lecture seule, mise à jour en direct à chaque génération).<br>
+  Le bouton « Copier le HTML » copie le tableau généré pour le coller sur SportsRégions ou tout autre éditeur.
+</div>
+
+<script>
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT3RqA-z8ANNaXXsYMgh4ynk8LV4EjOnkAqyThzFQ4TcxIUofmVlWg20wyfw-ZmeDettPCjkCgank_3/pub?output=csv";
+let currentHTML = '';
+let currentName = '';
+
+// ===================== Logique de génération (portage du script Python) =====================
+// ===== Logique commune de génération des plannings Sporting Villette =====
+// Portage JS de la logique Python (pandas) pour fonctionner côté navigateur.
+
+const DAYS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+const CAT_ORDER = ['M5','M7','M9','M11','M13','M15','M16','M17','M18','Loisir','Seniors'];
+
+const SECTION_COLORS = {
+  'Sporting Villette': '#0b5e8f',
+  'Entente Villette Genas': '#2f7d4f',
+  'Entente Lyon Est Handball (F)': '#a8452f',
+  'Entente Est Lyonnais (G)': '#8a5aab',
+};
+const DEFAULT_SECTION_COLOR = '#555555';
+
+const VILLE_COLORS = {
+  "Villette d'Anthon": '#c0392b',
+  'Meyzieu': '#5dade2',
+  'Genas': '#1a3a6b',
+  'Saint-Priest': '#d4ac0d',
+  'Janneyrias': '#2e7d32',
+  'Vaulx-En-Velin': '#e67e22',
+};
+const DEFAULT_VILLE_COLOR = '#7f8c8d';
+
+// ---------- CSV parsing (gère les guillemets et virgules dans les champs) ----------
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  // normalise les retours à la ligne
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => h.trim());
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    if (rows[r].length === 1 && rows[r][0] === '') continue; // ligne vide
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = (rows[r][idx] ?? '').trim(); });
+    out.push(obj);
+  }
+  return out;
+}
+
+// ---------- Helpers ----------
+function toMinutes(timeStr) {
+  if (!timeStr) return null;
+  const m = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+function fmtMinutes(m) {
+  const h = Math.floor(m / 60), mm = m % 60;
+  return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+}
+function splitLieu(lieu) {
+  if (!lieu) return [null, null];
+  const idx = lieu.indexOf(' - ');
+  if (idx === -1) return [lieu.trim(), ''];
+  return [lieu.slice(0, idx).trim(), lieu.slice(idx + 3).trim()];
+}
+function catRank(cat) {
+  const i = CAT_ORDER.indexOf(cat);
+  return i === -1 ? 99 : i;
+}
+
+// ---------- Construction des enregistrements de base à partir du CSV ----------
+function buildRecords(rowsRaw) {
+  const rows = rowsRaw.filter(r => r['Categorie'] && r['Categorie'].trim() !== '');
+  const records = rows.map(row => {
+    const cells = {}; DAYS.forEach(d => cells[d] = []);
+    for (const i of [1,2,3]) {
+      const jour = row[`E${i}.Jour`];
+      const lieu = row[`E${i}.Lieu`];
+      const deb = row[`E${i}. Debut`];
+      const fin = row[`E${i}.Fin`];
+      if (jour && DAYS.includes(jour) && lieu) {
+        const [ville, gymnase] = splitLieu(lieu);
+        cells[jour].push({
+          deb: fmtMinutes(toMinutes(deb)), fin: fmtMinutes(toMinutes(fin)),
+          startMin: toMinutes(deb), endMin: toMinutes(fin),
+          ville, gymnase, lieu,
+        });
+      }
+    }
+    return {
+      section: row['Section'],
+      categorie: row['Categorie'],
+      indice: row['Indice équipe'] && row['Indice équipe'].trim() !== '' ? row['Indice équipe'].trim() : null,
+      genre: row['Genre'],
+      cells,
+    };
+  });
+  records.sort((a,b) => {
+    const ca = catRank(a.categorie), cb = catRank(b.categorie);
+    if (ca !== cb) return ca - cb;
+    return (a.indice||'').localeCompare(b.indice||'');
+  });
+  return records;
+}
+
+// ---------- Fusion des lignes à horaires strictement identiques ----------
+function cellsKey(cells) {
+  return DAYS.map(d => d + ':' + cells[d].map(s => `${s.deb}-${s.fin}-${s.ville}-${s.gymnase}`).join('|')).join(';;');
+}
+function mergeRecords(records) {
+  const seen = new Map();
+  const merged = [];
+  for (const r of records) {
+    const key = r.section + '||' + r.categorie + '||' + cellsKey(r.cells);
+    if (seen.has(key)) {
+      const entry = seen.get(key);
+      if (r.indice && !entry.indices.includes(r.indice)) entry.indices.push(r.indice);
+      if (!entry.genres.includes(r.genre)) entry.genres.push(r.genre);
+    } else {
+      const entry = { section: r.section, categorie: r.categorie, indices: r.indice ? [r.indice] : [], genres: [r.genre], cells: r.cells };
+      seen.set(key, entry);
+      merged.push(entry);
+    }
+  }
+  return merged;
+}
+const GENRE_ORDER = ['Mixte','G','F'];
+function finalLabel(entry) {
+  let label = entry.categorie;
+  if (entry.indices.length) label += ' ' + entry.indices.join('+');
+  const genres = GENRE_ORDER.filter(g => entry.genres.includes(g));
+  if (genres.length > 1) label += ' (' + genres.join(', ') + ')';
+  else if (genres.length === 1 && genres[0] !== 'Mixte') label += ` (${genres[0]})`;
+  return label;
+}
+
+function sectionOrderFrom(records) {
+  const order = [];
+  for (const r of records) if (!order.includes(r.section)) order.push(r.section);
+  return order;
+}
+
+// ===== Rendus HTML : équipe complet / équipe minimal / gymnase =====
+
+// ---------- 1) VERSION "BEAU" (CSS classes) ----------
+function renderEquipeComplet(merged) {
+  const sectionOrder = sectionOrderFrom(merged);
+  function cellHtml(sessions) {
+    if (!sessions.length) return '';
+    return sessions.map(s => {
+      const color = VILLE_COLORS[s.ville] || DEFAULT_VILLE_COLOR;
+      return `<span class="creneau" style="--ville-color:${color}">`
+        + `<span class="heure">${s.deb}\u2013${s.fin}</span>`
+        + `<span class="ville">${s.ville}</span>`
+        + `<span class="gymnase">${s.gymnase}</span></span>`;
+    }).join('');
+  }
+  let rows = '';
+  for (const section of sectionOrder) {
+    const color = SECTION_COLORS[section] || DEFAULT_SECTION_COLOR;
+    rows += `<tr class="section-row" style="--section-color:${color}"><td colspan="7">${section}</td></tr>\n`;
+    for (const r of merged) {
+      if (r.section !== section) continue;
+      const label = finalLabel(r);
+      const tds = DAYS.map(d => `<td>${cellHtml(r.cells[d])}</td>`).join('');
+      rows += `<tr><th style="--section-color:${color}">${label}</th>${tds}</tr>\n`;
+    }
+  }
+  const headerCells = DAYS.map(d => `<th>${d}</th>`).join('');
+  const legend = Object.entries(VILLE_COLORS).map(([v,c]) =>
+    `<span class="legend-item"><span class="swatch" style="background:${c}"></span>${v}</span>`).join('');
+
+  return `<div class="planning-wrapper">
+<style>
+.planning-wrapper { font-family: Arial, Helvetica, sans-serif; overflow-x: auto; }
+.planning-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; font-size: 12px; color: #333; }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; }
+.planning-table { border-collapse: collapse; width: 100%; min-width: 950px; font-size: 13px; }
+.planning-table th, .planning-table td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+.planning-table thead th { background: #1a1a1a; color: #fff; text-align: center; position: sticky; top: 0; }
+.planning-table thead th:first-child { text-align: left; }
+.section-row td { background: var(--section-color); color: #fff; font-weight: bold; padding: 5px 8px; font-size: 13px; letter-spacing: .3px; }
+.planning-table tbody th { background: #f4f4f4; border-left: 4px solid var(--section-color); white-space: nowrap; font-weight: 600; }
+.creneau { display: block; margin-bottom: 6px; padding-left: 6px; border-left: 3px solid var(--ville-color); }
+.creneau:last-child { margin-bottom: 0; }
+.creneau .heure { display: block; font-weight: bold; color: #111; }
+.creneau .ville { display: block; color: var(--ville-color); font-weight: 600; font-size: 11.5px; }
+.creneau .gymnase { display: block; color: #777; font-size: 11px; font-style: italic; }
+.planning-table tbody tr:hover td:not(.section-row) { background: #fafafa; }
+</style>
+<div class="planning-legend">${legend}</div>
+<table class="planning-table">
+  <thead><tr><th>Équipe</th>${headerCells}</tr></thead>
+  <tbody>
+${rows}
+  </tbody>
+</table>
+</div>`;
+}
+
+// ---------- 2) VERSION MINIMALE (br/b/i + color uniquement) ----------
+function renderEquipeMinimal(merged) {
+  const sectionOrder = sectionOrderFrom(merged);
+  function cellHtml(sessions) {
+    if (!sessions.length) return '&nbsp;';
+    return sessions.map(s => {
+      const color = VILLE_COLORS[s.ville] || DEFAULT_VILLE_COLOR;
+      return `<b>${s.deb}\u2013${s.fin}</b><br>`
+        + `<span style="color:${color}"><b>${s.ville}</b></span><br>`
+        + `<i>${s.gymnase}</i>`;
+    }).join('<br><br>');
+  }
+  let rows = '';
+  for (const section of sectionOrder) {
+    const color = SECTION_COLORS[section] || DEFAULT_SECTION_COLOR;
+    rows += `<tr><td colspan="7" style="background-color:${color};color:#ffffff"><b>${section}</b></td></tr>\n`;
+    for (const r of merged) {
+      if (r.section !== section) continue;
+      const label = finalLabel(r);
+      const tds = DAYS.map(d => `<td>${cellHtml(r.cells[d])}</td>`).join('');
+      rows += `<tr><td style="background-color:#f4f4f4"><b>${label}</b></td>${tds}</tr>\n`;
+    }
+  }
+  const headerCells = DAYS.map(d => `<th style="background-color:#1a1a1a;color:#ffffff">${d}</th>`).join('');
+  const legend = Object.entries(VILLE_COLORS).map(([v,c]) =>
+    `<span style="color:${c}"><b>&#9632;</b> ${v}</span>`).join(' &nbsp;&nbsp; ');
+
+  return `<p>${legend}</p>
+<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
+  <thead><tr><th style="background-color:#1a1a1a;color:#ffffff">Equipe</th>${headerCells}</tr></thead>
+  <tbody>
+${rows}
+  </tbody>
+</table>`;
+}
+
+// ---------- 3) VERSION PAR GYMNASE ----------
+function renderParGymnase(records) {
+  // records = liste brute (non fusionnée) avec section connue, on reconstruit les sessions individuelles
+  const sessions = [];
+  for (const r of records) {
+    for (const d of DAYS) {
+      for (const s of r.cells[d]) {
+        sessions.push({
+          gymnase: s.lieu, day: d,
+          start: s.startMin, end: s.endMin,
+          label: (() => {
+            let l = r.categorie;
+            if (r.indice) l += ' ' + r.indice;
+            if (r.genre && r.genre !== 'Mixte') l += ` (${r.genre})`;
+            return l;
+          })(),
+          section: r.section,
+        });
+      }
+    }
+  }
+  const gymnases = [...new Set(sessions.map(s => s.gymnase))].sort();
+  const STEP = 15;
+
+  function fmtMin(m) { return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`; }
+
+  let blocks = '';
+  for (const gymnase of gymnases) {
+    const daySessions = {}; DAYS.forEach(d => daySessions[d] = []);
+    sessions.filter(s => s.gymnase === gymnase).forEach(s => daySessions[s.day].push(s));
+
+    const gymSessions = sessions.filter(s => s.gymnase === gymnase);
+    const minStart = Math.min(...gymSessions.map(s => s.start));
+    const maxEnd = Math.max(...gymSessions.map(s => s.end));
+    const GRID_START = Math.floor(minStart / STEP) * STEP;
+    const GRID_END = Math.ceil(maxEnd / STEP) * STEP;
+    const nSlots = (GRID_END - GRID_START) / STEP;
+    const slotIndex = (minute) => Math.max(0, Math.min(nSlots, Math.floor((minute - GRID_START) / STEP)));
+
+    const cellRender = {}; const skip = {};
+    DAYS.forEach(d => { cellRender[d] = {}; skip[d] = new Set(); });
+
+    for (const d of DAYS) {
+      const evts = [...daySessions[d]].sort((a,b) => a.start - b.start);
+      const occ = Array.from({length: nSlots}, () => []);
+      for (const e of evts) {
+        const si = slotIndex(e.start), ei = slotIndex(e.end);
+        for (let k = si; k < ei; k++) occ[k].push(e);
+      }
+      let k = 0;
+      while (k < nSlots) {
+        const evs = occ[k];
+        if (!evs.length) { k++; continue; }
+        let j = k;
+        const sameSet = (a,b) => a.length === b.length && a.every((v,i) => v === b[i]);
+        while (j < nSlots && sameSet(occ[j], evs)) j++;
+        const rowspan = j - k;
+        const segStart = GRID_START + k*STEP;
+        const segEnd = GRID_START + j*STEP;
+        let content, cls;
+        if (evs.length === 1) {
+          const e = evs[0];
+          const color = SECTION_COLORS[e.section] || DEFAULT_SECTION_COLOR;
+          content = `<span class="evt" style="--sec-color:${color}"><span class="evt-h">${fmtMin(e.start)}\u2013${fmtMin(e.end)}</span><span class="evt-t">${e.label}</span></span>`;
+          cls = 'occupied';
+        } else {
+          const fullIdentical = evs.every(e => e.start === segStart && e.end === segEnd);
+          if (fullIdentical) {
+            const labels = evs.map(e => e.label).join(', ');
+            content = `<span class="evt evt-merged"><span class="evt-h">${fmtMin(segStart)}\u2013${fmtMin(segEnd)}</span><span class="evt-t">${labels}</span></span>`;
+            cls = 'occupied merged';
+          } else {
+            content = evs.map(e => {
+              const color = SECTION_COLORS[e.section] || DEFAULT_SECTION_COLOR;
+              return `<span class="evt" style="--sec-color:${color}"><span class="evt-h">${fmtMin(e.start)}\u2013${fmtMin(e.end)}</span><span class="evt-t">${e.label}</span></span>`;
+            }).join('');
+            cls = 'occupied conflict';
+          }
+        }
+        cellRender[d][k] = [rowspan, content, cls];
+        for (let x = k+1; x < j; x++) skip[d].add(x);
+        k = j;
+      }
+    }
+
+    let rowsHtml = '';
+    for (let slot = 0; slot < nSlots; slot++) {
+      const minute = GRID_START + slot*STEP;
+      const labelTime = (minute % 60 === 0) ? fmtMin(minute) : '';
+      let rowCells = '';
+      for (const d of DAYS) {
+        if (skip[d].has(slot)) continue;
+        if (cellRender[d][slot]) {
+          const [rowspan, content, cls] = cellRender[d][slot];
+          rowCells += `<td class="${cls}" rowspan="${rowspan}">${content}</td>`;
+        } else {
+          rowCells += `<td class="empty"></td>`;
+        }
+      }
+      const hourMark = (minute % 60 === 0) ? ' class="hour-mark"' : '';
+      rowsHtml += `<tr${hourMark}><th>${labelTime}</th>${rowCells}</tr>\n`;
+    }
+    const headerCells = DAYS.map(d => `<th>${d}</th>`).join('');
+    blocks += `
+<div class="gym-block">
+  <h3>${gymnase}</h3>
+  <table class="gym-table">
+    <thead><tr><th></th>${headerCells}</tr></thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+</div>`;
+  }
+
+  const legend = Object.entries(SECTION_COLORS).map(([s,c]) =>
+    `<span class="legend-item"><span class="swatch" style="background:${c}"></span>${s}</span>`).join('');
+
+  return `<div class="gym-wrapper">
+<style>
+.gym-wrapper { font-family: Arial, Helvetica, sans-serif; }
+.gym-legend { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; font-size:12px; color:#333; }
+.legend-item { display:flex; align-items:center; gap:5px; }
+.swatch { display:inline-block; width:12px; height:12px; border-radius:2px; }
+.gym-note { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px; font-size:12px; color:#333; }
+.gym-note .note-item { display:flex; align-items:center; gap:5px; }
+.note-swatch { display:inline-block; width:14px; height:14px; border-radius:2px; border:1px solid #ccc; }
+.gym-block { margin-bottom:36px; }
+.gym-block h3 { background:#1a1a1a; color:#fff; padding:8px 12px; margin:0; font-size:14px; border-radius:4px 4px 0 0; }
+.gym-table { border-collapse: collapse; width:100%; table-layout: fixed; font-size:11.5px; }
+.gym-table th, .gym-table td { border:1px solid #e2e2e2; padding:0; }
+.gym-table thead th { background:#333; color:#fff; padding:5px; font-size:12px; }
+.gym-table tbody th { width:46px; text-align:right; padding-right:6px; color:#888; font-weight:normal; font-size:10.5px; border-right:2px solid #ccc; vertical-align:top; }
+.gym-table tr.hour-mark th { color:#333; font-weight:bold; }
+.gym-table td.empty { background:#fafafa; height:14px; }
+.gym-table td.occupied { background:#eaf3fb; vertical-align:top; padding:3px 5px; }
+.gym-table td.merged { background:#fff6cc; }
+.gym-table td.conflict { background:#fdd; }
+.evt { display:block; border-left:3px solid var(--sec-color); padding-left:5px; margin-bottom:4px; }
+.evt:last-child { margin-bottom:0; }
+.evt-h { display:block; font-weight:bold; color:#111; }
+.evt-t { display:block; color:#444; }
+.evt-merged { border-left:3px solid #c9a400; padding-left:5px; }
+.evt-merged .evt-t { color:#333; }
+</style>
+<div class="gym-legend">${legend}</div>
+<div class="gym-note">
+  <span class="note-item"><span class="note-swatch" style="background:#eaf3fb;"></span>Créneau simple</span>
+  <span class="note-item"><span class="note-swatch" style="background:#fff6cc;"></span>Chevauchement intégral (équipes regroupées)</span>
+  <span class="note-item"><span class="note-swatch" style="background:#fdd;"></span>Conflit (chevauchement partiel)</span>
+</div>
+${blocks}
+</div>`;
+}
+
+
+// ===============================================================================================
+
+async function fetchCSV() {
+  const res = await fetch(CSV_URL, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return await res.text();
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+async function generate(kind) {
+  setStatus('⏳ Récupération des données depuis Google Sheet...');
+  document.getElementById('result-panel').style.display = 'none';
+  try {
+    const csvText = await fetchCSV();
+    const rows = parseCSV(csvText);
+    if (!rows.length) throw new Error('Aucune ligne lue dans le CSV.');
+    const records = buildRecords(rows);
+    if (!records.length) throw new Error('Aucune équipe trouvée (vérifie les en-têtes de colonnes du Google Sheet).');
+    const merged = mergeRecords(records);
+
+    let html, name;
+    if (kind === 'complet') { html = renderEquipeComplet(merged); name = 'planning_par_equipe_complet.html'; }
+    else if (kind === 'minimal') { html = renderEquipeMinimal(merged); name = 'planning_par_equipe_site.html'; }
+    else { html = renderParGymnase(records); name = 'planning_par_gymnase.html'; }
+
+    currentHTML = html;
+    currentName = name;
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-name').textContent = name;
+    document.getElementById('result-panel').style.display = 'block';
+    setStatus('✅ Planning généré à partir des données actuelles du Google Sheet.', 'ok');
+  } catch (err) {
+    console.error(err);
+    let hint = '';
+    if (String(err).includes('Failed to fetch') || String(err).includes('TypeError')) {
+      hint = ' — vérifie que l\'onglet est bien publié (Fichier > Partager > Publier sur le web > CSV) et que le lien est à jour.';
+    }
+    setStatus('❌ Erreur : ' + err.message + hint, 'error');
+  }
+}
+
+function copyResult() {
+  if (!currentHTML) return;
+  navigator.clipboard.writeText(currentHTML).then(() => {
+    setStatus('📋 HTML copié dans le presse-papiers.', 'ok');
+  }).catch(() => {
+    setStatus('❌ Impossible de copier automatiquement — sélectionne et copie manuellement.', 'error');
+  });
+}
+
+function downloadResult() {
+  if (!currentHTML) return;
+  const blob = new Blob([currentHTML], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = currentName || 'planning.html';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
