@@ -186,7 +186,7 @@ function buildRecords(rowsRaw) {
   const rows = rowsRaw.filter(r => r['Categorie'] && r['Categorie'].trim() !== '');
   const records = rows.map(row => {
     const cells = {}; DAYS.forEach(d => cells[d] = []);
-    for (const i of [1,2,3]) {
+    for (const i of [1,2,3,4]) {
       const jour = row[`E${i}.Jour`];
       const lieu = row[`E${i}.Lieu`];
       const deb = row[`E${i}. Debut`];
