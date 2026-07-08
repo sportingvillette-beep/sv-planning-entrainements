@@ -51,6 +51,13 @@
   }
   #result-content { padding: 16px; color: #111111; }
   .footer-note { color: var(--muted); font-size: 12px; margin-top: 30px; line-height: 1.5; }
+
+  @media print {
+    body * { visibility: hidden; }
+    #result-content, #result-content * { visibility: visible; }
+    #result-content { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+    body { background: #fff !important; }
+  }
 </style>
 </head>
 <body>
@@ -76,11 +83,23 @@
   <div id="status" class="status"></div>
 </div>
 
+<div class="panel">
+  <h2>Team Book (PDF, un par entente)</h2>
+  <div class="btn-row">
+    <button onclick="generateTeamBook('Sporting Villette')">🤾 Sporting Villette</button>
+    <button onclick="generateTeamBook('Entente Villette Genas')">🤾 Entente Villette Genas</button>
+    <button onclick="generateTeamBook('Entente Lyon Est Handball (F)')">🤾 Entente Lyon Est Handball (F)</button>
+    <button onclick="generateTeamBook('Entente Est Lyonnais (G)')">🤾 Entente Est Lyonnais (G)</button>
+  </div>
+  <div id="status-tb" class="status"></div>
+</div>
+
 <div class="panel" id="result-panel">
   <div id="result-toolbar">
     <span id="result-name"></span>
     <button onclick="copyResult()">📋 Copier le HTML</button>
     <button onclick="downloadResult()">⬇️ Télécharger .html</button>
+    <button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
   </div>
   <div id="result-frame-wrap">
     <div id="result-content"></div>
@@ -187,6 +206,7 @@ function buildRecords(rowsRaw) {
   const rows = rowsRaw.filter(r => r['Categorie'] && r['Categorie'].trim() !== '');
   const records = rows.map(row => {
     const cells = {}; DAYS.forEach(d => cells[d] = []);
+    const sessionsOrdered = [];
     for (const i of [1,2,3,4]) {
       const jour = row[`E${i}.Jour`];
       const lieu = row[`E${i}.Lieu`];
@@ -194,19 +214,31 @@ function buildRecords(rowsRaw) {
       const fin = row[`E${i}.Fin`];
       if (jour && DAYS.includes(jour) && lieu) {
         const [ville, gymnase] = splitLieu(lieu);
-        cells[jour].push({
+        const s = {
           deb: fmtMinutes(toMinutes(deb)), fin: fmtMinutes(toMinutes(fin)),
           startMin: toMinutes(deb), endMin: toMinutes(fin),
-          ville, gymnase, lieu,
-        });
+          ville, gymnase, lieu, jour,
+        };
+        cells[jour].push(s);
+        sessionsOrdered.push(s);
       }
     }
+    const entraineurs = [1,2,3,4]
+      .map(i => (row[`Entraineur${i}`] || '').trim())
+      .filter(v => v !== '');
+    const clean = v => (v || '').trim();
     return {
       section: row['Section'],
       categorie: row['Categorie'],
       indice: row['Indice équipe'] && row['Indice équipe'].trim() !== '' ? row['Indice équipe'].trim() : null,
       genre: row['Genre'],
       cells,
+      sessionsOrdered,
+      anneesNaissance: clean(row['Années de naissance']),
+      prixLicence: clean(row['Prix_Licence']),
+      entraineurs,
+      p1: { niveau: clean(row['P1.Niveau']), poule: clean(row['P1.Poule']) },
+      p2: { niveau: clean(row['P2.Niveau']), poule: clean(row['P2.Poule']) },
     };
   });
   records.sort((a,b) => {
@@ -504,6 +536,107 @@ ${blocks}
 </div>`;
 }
 
+// ---------- 4) TEAM BOOK (page de garde + 1 page par équipe, prêt pour export PDF) ----------
+function renderTeamBook(records, sectionName) {
+  const teams = records.filter(r => r.section === sectionName);
+
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  function fmtPrix(p) {
+    if (!p) return '';
+    const n = parseFloat(String(p).replace(',', '.'));
+    if (isNaN(n)) return p;
+    return (Number.isInteger(n) ? n : n.toFixed(2)) + ' €';
+  }
+  function genreLabel(g) {
+    if (g === 'Mixte') return 'Mixte';
+    if (g === 'G') return 'Garçons';
+    if (g === 'F') return 'Filles';
+    return g || '';
+  }
+
+  function teamPage(r) {
+    const label = r.categorie + (r.indice ? ' ' + r.indice : '');
+    const trainRows = r.sessionsOrdered.map(s =>
+      `<tr><td>${s.ville}${s.gymnase ? ' - ' + s.gymnase : ''}</td><td>${s.jour}</td><td>${s.deb}</td><td>${s.fin}</td></tr>`
+    ).join('');
+    const trainBlock = trainRows
+      ? `<table class="tb-table"><thead><tr><th>Lieu</th><th>Jour</th><th>Début</th><th>Fin</th></tr></thead><tbody>${trainRows}</tbody></table>`
+      : `<p class="tb-empty">Aucun créneau renseigné.</p>`;
+
+    const coachBlock = r.entraineurs.length
+      ? `<p>${r.entraineurs.join(', ')}</p>`
+      : `<p class="tb-empty">À confirmer</p>`;
+
+    let champBlock = '';
+    if (r.p1.niveau) {
+      champBlock += `<p><b>Phase 1</b> : ${r.p1.niveau}${r.p1.poule ? ' (' + r.p1.poule + ')' : ''}</p>`;
+    }
+    if (r.p2.niveau) {
+      champBlock += `<p><b>Phase 2</b> : ${r.p2.niveau}${r.p2.poule ? ' (' + r.p2.poule + ')' : ''}</p>`;
+    }
+    if (!champBlock) champBlock = `<p class="tb-empty">Non communiqué</p>`;
+
+    const metaParts = [];
+    if (r.anneesNaissance) metaParts.push(`Années de naissance : ${r.anneesNaissance}`);
+    if (r.prixLicence) metaParts.push(`Prix de la licence : ${fmtPrix(r.prixLicence)}`);
+    metaParts.push(genreLabel(r.genre));
+
+    return `<div class="team-page">
+  <div class="tb-header">${r.section}</div>
+  <div class="tb-title">${label}</div>
+  <div class="tb-meta">${metaParts.join(' &nbsp;•&nbsp; ')}</div>
+  <div class="tb-block"><h4>Entraînements</h4>${trainBlock}</div>
+  <div class="tb-block"><h4>Entraîneurs</h4>${coachBlock}</div>
+  <div class="tb-block"><h4>Championnat</h4>${champBlock}</div>
+</div>`;
+  }
+
+  const coverPage = `<div class="team-page cover">
+  <div class="cover-club">SPORTING VILLETTE</div>
+  <div class="cover-date">${dateStr}</div>
+  <div class="cover-title">TEAM BOOK</div>
+  <div class="cover-sub">${sectionName}</div>
+  <div class="cover-note">Synthèse de toutes les informations par équipe</div>
+</div>`;
+
+  const pages = teams.map(teamPage).join('\n');
+
+  return `<div class="tb-wrapper">
+<style>
+.tb-wrapper { font-family: Arial, Helvetica, sans-serif; color:#111; }
+.team-page {
+  width: 210mm; min-height: 297mm; box-sizing: border-box;
+  padding: 18mm 16mm; margin: 0 auto 8mm; background:#fff;
+  border: 1px solid #ddd; page-break-after: always; break-after: page;
+  position: relative;
+}
+.team-page.cover { display:flex; flex-direction:column; justify-content:center; }
+.cover-club { font-size:14px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; }
+.cover-date { position:absolute; top:18mm; right:16mm; font-size:14px; color:#1a1a4e; }
+.cover-title { font-size:64px; font-weight:900; color:#1a1a4e; margin:20px 0; line-height:0.95; }
+.cover-sub { font-size:20px; color:#1a1a4e; margin-top:10px; }
+.cover-note { font-size:13px; color:#555; margin-top:30px; }
+.tb-header { font-size:13px; color:#777; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+.tb-title { font-size:32px; font-weight:900; color:#1a1a4e; margin-bottom:8px; }
+.tb-meta { font-size:13px; color:#444; margin-bottom:20px; }
+.tb-block { margin-bottom:22px; }
+.tb-block h4 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:2px solid #1a1a4e; padding-bottom:4px; margin:0 0 10px; }
+.tb-table { border-collapse:collapse; width:100%; font-size:13px; }
+.tb-table th, .tb-table td { border:1px solid #ddd; padding:6px 8px; text-align:left; }
+.tb-table thead th { background:#1a1a4e; color:#fff; }
+.tb-empty { color:#999; font-style:italic; font-size:13px; margin:0; }
+.tb-block p { margin:4px 0; font-size:13px; }
+@media print {
+  .team-page { border:none; margin:0; }
+}
+</style>
+${coverPage}
+${pages}
+</div>`;
+}
+
 
 // ===============================================================================================
 
@@ -548,6 +681,46 @@ async function generate(kind) {
       hint = ' — vérifie que l\'onglet est bien publié (Fichier > Partager > Publier sur le web > CSV) et que le lien est à jour.';
     }
     setStatus('❌ Erreur : ' + err.message + hint, 'error');
+  }
+}
+
+function slugify(s) {
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+async function generateTeamBook(sectionName) {
+  const statusEl = document.getElementById('status-tb');
+  statusEl.className = 'status'; statusEl.textContent = '⏳ Récupération des données depuis Google Sheet...';
+  document.getElementById('result-panel').style.display = 'none';
+  try {
+    const csvText = await fetchCSV();
+    const rows = parseCSV(csvText);
+    if (!rows.length) throw new Error('Aucune ligne lue dans le CSV.');
+    const records = buildRecords(rows);
+    const teamCount = records.filter(r => r.section === sectionName).length;
+    if (!teamCount) throw new Error('Aucune équipe trouvée pour "' + sectionName + '".');
+
+    const html = renderTeamBook(records, sectionName);
+    const name = 'teambook_' + slugify(sectionName) + '.html';
+
+    currentHTML = html;
+    currentName = name;
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-name').textContent = name + ' (' + teamCount + ' équipes)';
+    document.getElementById('result-panel').style.display = 'block';
+    statusEl.textContent = '✅ Team Book généré (' + teamCount + ' équipes). Clique "Imprimer / Enregistrer en PDF" ci-dessous.';
+    statusEl.className = 'status ok';
+    document.getElementById('result-panel').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    console.error(err);
+    let hint = '';
+    if (String(err).includes('Failed to fetch') || String(err).includes('TypeError')) {
+      hint = ' — vérifie que l\'onglet est bien publié (Fichier > Partager > Publier sur le web > CSV) et que le lien est à jour.';
+    }
+    statusEl.textContent = '❌ Erreur : ' + err.message + hint;
+    statusEl.className = 'status error';
   }
 }
 
