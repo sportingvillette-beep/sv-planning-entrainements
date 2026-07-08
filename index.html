@@ -56,6 +56,8 @@
     body * { visibility: hidden; }
     #result-content, #result-content * { visibility: visible; }
     #result-content { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+    #result-frame-wrap { max-height: none !important; overflow: visible !important; background: none !important; border: none !important; }
+    #result-panel { max-height: none !important; overflow: visible !important; }
     body { background: #fff !important; }
   }
 </style>
@@ -587,9 +589,13 @@ function renderTeamBook(records, sectionName) {
   <div class="tb-header">${r.section}</div>
   <div class="tb-title">${label}</div>
   <div class="tb-meta">${metaParts.join(' &nbsp;•&nbsp; ')}</div>
-  <div class="tb-block"><h4>Entraînements</h4>${trainBlock}</div>
-  <div class="tb-block"><h4>Entraîneurs</h4>${coachBlock}</div>
-  <div class="tb-block"><h4>Championnat</h4>${champBlock}</div>
+  <div class="tb-body">
+    <div class="tb-col"><div class="tb-block"><h4>Entraînements</h4>${trainBlock}</div></div>
+    <div class="tb-col">
+      <div class="tb-block"><h4>Entraîneurs</h4>${coachBlock}</div>
+      <div class="tb-block"><h4>Championnat</h4>${champBlock}</div>
+    </div>
+  </div>
 </div>`;
   }
 
@@ -605,23 +611,26 @@ function renderTeamBook(records, sectionName) {
 
   return `<div class="tb-wrapper">
 <style>
+@page { size: A4 landscape; margin: 0; }
 .tb-wrapper { font-family: Arial, Helvetica, sans-serif; color:#111; }
 .team-page {
-  width: 210mm; min-height: 297mm; box-sizing: border-box;
-  padding: 18mm 16mm; margin: 0 auto 8mm; background:#fff;
+  width: 297mm; min-height: 210mm; box-sizing: border-box;
+  padding: 14mm 18mm; margin: 0 auto 8mm; background:#fff;
   border: 1px solid #ddd; page-break-after: always; break-after: page;
   position: relative;
 }
 .team-page.cover { display:flex; flex-direction:column; justify-content:center; }
 .cover-club { font-size:14px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; }
-.cover-date { position:absolute; top:18mm; right:16mm; font-size:14px; color:#1a1a4e; }
-.cover-title { font-size:64px; font-weight:900; color:#1a1a4e; margin:20px 0; line-height:0.95; }
+.cover-date { position:absolute; top:14mm; right:18mm; font-size:14px; color:#1a1a4e; }
+.cover-title { font-size:72px; font-weight:900; color:#1a1a4e; margin:16px 0; line-height:0.95; }
 .cover-sub { font-size:20px; color:#1a1a4e; margin-top:10px; }
-.cover-note { font-size:13px; color:#555; margin-top:30px; }
+.cover-note { font-size:13px; color:#555; margin-top:24px; }
 .tb-header { font-size:13px; color:#777; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
 .tb-title { font-size:32px; font-weight:900; color:#1a1a4e; margin-bottom:8px; }
-.tb-meta { font-size:13px; color:#444; margin-bottom:20px; }
-.tb-block { margin-bottom:22px; }
+.tb-meta { font-size:13px; color:#444; margin-bottom:18px; }
+.tb-body { display:flex; gap:32px; }
+.tb-col { flex: 1; }
+.tb-block { margin-bottom:18px; }
 .tb-block h4 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:2px solid #1a1a4e; padding-bottom:4px; margin:0 0 10px; }
 .tb-table { border-collapse:collapse; width:100%; font-size:13px; }
 .tb-table th, .tb-table td { border:1px solid #ddd; padding:6px 8px; text-align:left; }
