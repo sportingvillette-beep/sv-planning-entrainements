@@ -611,32 +611,32 @@ function renderTeamBook(records, sectionName) {
 
   return `<div class="tb-wrapper">
 <style>
-@page { size: A4 landscape; margin: 0; }
+@page { size: 100mm 132mm; margin: 0; }
 .tb-wrapper { font-family: Arial, Helvetica, sans-serif; color:#111; }
 .team-page {
-  width: 297mm; min-height: 210mm; box-sizing: border-box;
-  padding: 14mm 18mm; margin: 0 auto 8mm; background:#fff;
+  width: 100mm; min-height: 132mm; box-sizing: border-box;
+  padding: 8mm 9mm; margin: 0 auto 8mm; background:#fff;
   border: 1px solid #ddd; page-break-after: always; break-after: page;
   position: relative;
 }
 .team-page.cover { display:flex; flex-direction:column; justify-content:center; }
-.cover-club { font-size:14px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; }
-.cover-date { position:absolute; top:14mm; right:18mm; font-size:14px; color:#1a1a4e; }
-.cover-title { font-size:72px; font-weight:900; color:#1a1a4e; margin:16px 0; line-height:0.95; }
-.cover-sub { font-size:20px; color:#1a1a4e; margin-top:10px; }
-.cover-note { font-size:13px; color:#555; margin-top:24px; }
-.tb-header { font-size:13px; color:#777; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
-.tb-title { font-size:32px; font-weight:900; color:#1a1a4e; margin-bottom:8px; }
-.tb-meta { font-size:13px; color:#444; margin-bottom:18px; }
-.tb-body { display:flex; gap:32px; }
-.tb-col { flex: 1; }
-.tb-block { margin-bottom:18px; }
-.tb-block h4 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:2px solid #1a1a4e; padding-bottom:4px; margin:0 0 10px; }
-.tb-table { border-collapse:collapse; width:100%; font-size:13px; }
-.tb-table th, .tb-table td { border:1px solid #ddd; padding:6px 8px; text-align:left; }
+.cover-club { font-size:10px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; }
+.cover-date { position:absolute; top:8mm; right:9mm; font-size:10px; color:#1a1a4e; }
+.cover-title { font-size:30px; font-weight:900; color:#1a1a4e; margin:10px 0; line-height:0.95; }
+.cover-sub { font-size:14px; color:#1a1a4e; margin-top:6px; }
+.cover-note { font-size:10px; color:#555; margin-top:16px; }
+.tb-header { font-size:10px; color:#777; text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
+.tb-title { font-size:22px; font-weight:900; color:#1a1a4e; margin-bottom:5px; }
+.tb-meta { font-size:10.5px; color:#444; margin-bottom:12px; line-height:1.5; }
+.tb-body { display:block; }
+.tb-col { width:100%; }
+.tb-block { margin-bottom:12px; }
+.tb-block h4 { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:2px solid #1a1a4e; padding-bottom:3px; margin:0 0 6px; }
+.tb-table { border-collapse:collapse; width:100%; font-size:10.5px; }
+.tb-table th, .tb-table td { border:1px solid #ddd; padding:4px 5px; text-align:left; }
 .tb-table thead th { background:#1a1a4e; color:#fff; }
-.tb-empty { color:#999; font-style:italic; font-size:13px; margin:0; }
-.tb-block p { margin:4px 0; font-size:13px; }
+.tb-empty { color:#999; font-style:italic; font-size:10.5px; margin:0; }
+.tb-block p { margin:3px 0; font-size:10.5px; }
 @media print {
   .team-page { border:none; margin:0; }
 }
