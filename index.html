@@ -51,6 +51,17 @@
   }
   #result-content { padding: 16px; color: #111111; }
   .footer-note { color: var(--muted); font-size: 12px; margin-top: 30px; line-height: 1.5; }
+  .footer-note a { color: var(--accent); }
+  .footer-note code { background: #12141a; padding: 1px 5px; border-radius: 4px; }
+  .team-checkboxes { display: flex; flex-wrap: wrap; gap: 10px; }
+  .team-check {
+    background: #12141a; border: 1px solid var(--panel-border); border-radius: 7px;
+    padding: 8px 12px; font-size: 13px; display: flex; align-items: center; gap: 7px; cursor: pointer;
+  }
+  .token-input {
+    flex: 1; min-width: 220px; padding: 10px 12px; border-radius: 7px;
+    border: 1px solid var(--panel-border); background: #12141a; color: var(--text); font-size: 14px;
+  }
 
   @media print {
     body * { visibility: hidden; }
@@ -96,6 +107,31 @@
   <div id="status-tb" class="status"></div>
 </div>
 
+<div class="panel">
+  <h2>FFHB — Calendrier &amp; résultats</h2>
+  <div class="btn-row">
+    <button onclick="generateFFHBPlanning()">📅 Planning du week-end à venir</button>
+    <button onclick="generateFFHBResultats()">🏆 Résultats du dernier week-end</button>
+  </div>
+  <div id="last-update-info" class="status"></div>
+</div>
+
+<div class="panel">
+  <h2>Rafraîchir les données FFHB</h2>
+  <div class="subtitle" style="margin-bottom:14px;">Rafraîchissement automatique chaque dimanche soir. Pour forcer une mise à jour immédiate, renseigne ton jeton GitHub une fois (voir note en bas de page) puis utilise le bouton ci-dessous.</div>
+  <div class="btn-row" style="margin-bottom:12px;">
+    <input id="gh-token-input" type="password" class="token-input" placeholder="Coller le jeton GitHub ici">
+    <button class="secondary" onclick="saveToken()">💾 Enregistrer le jeton</button>
+    <button class="secondary" onclick="forgetToken()">🗑️ Oublier le jeton</button>
+  </div>
+  <div id="gh-token-status" class="status" style="margin-bottom:14px;"></div>
+  <div id="team-checkboxes" class="team-checkboxes"></div>
+  <div class="btn-row" style="margin-top:14px;">
+    <button onclick="triggerRefresh()">🔄 Lancer un rafraîchissement (coché = équipes ciblées, sinon toutes)</button>
+  </div>
+  <div id="status-refresh" class="status"></div>
+</div>
+
 <div class="panel" id="result-panel">
   <div id="result-toolbar">
     <span id="result-name"></span>
@@ -111,6 +147,13 @@
 <div class="footer-note">
   Source des données : Google Sheet publié en CSV (lecture seule, mise à jour en direct à chaque génération).<br>
   Le bouton « Copier le HTML » copie le tableau généré pour le coller sur SportsRégions ou tout autre éditeur.
+  <br><br>
+  <b>Jeton GitHub pour le rafraîchissement manuel FFHB</b> : crée un
+  <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">jeton "fine-grained"</a>
+  limité au repo <code>sv-planning-entrainements</code>, avec uniquement la permission
+  <code>Actions: Read and write</code>. Le jeton reste stocké dans ce navigateur (localStorage) —
+  il n'est envoyé qu'à l'API GitHub officielle, jamais ailleurs. À refaire sur chaque appareil
+  utilisé pour déclencher un rafraîchissement manuel.
 </div>
 
 <script>
@@ -751,6 +794,239 @@ function downloadResult() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ===================== Vue FFHB (calendrier / résultats) =====================
+// Lit les fichiers générés par le scraper (workflow GitHub Actions) dans data/ et
+// scraper/team_mapping.csv — tous servis en same-origin par GitHub Pages, donc pas
+// de souci CORS contrairement à un fetch direct vers ffhandball.fr depuis le navigateur.
+
+const TEAM_MAPPING_URL = 'scraper/team_mapping.csv';
+const CALENDRIER_CLUB_URL = 'data/calendrier_club.csv';
+const LAST_UPDATE_URL = 'data/last_update.json';
+const GH_REPO = 'sportingvillette-beep/sv-planning-entrainements';
+const GH_WORKFLOW_FILE = 'scrape-ffhb.yml';
+const GH_TOKEN_KEY = 'sv_gh_token';
+
+async function fetchText(url) {
+  const sep = url.includes('?') ? '&' : '?';
+  const res = await fetch(url + sep + '_=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' sur ' + url);
+  return await res.text();
+}
+
+const MONTHS_FR = {
+  janvier: 0, février: 1, fevrier: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+  juillet: 6, août: 7, aout: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11, decembre: 11,
+};
+// Gère "dimanche 13 septembre 2026 à 16H00" (date confirmée) et
+// "3 octobre 2026 au 4 octobre 2026" (plage, date pas encore fixée — on prend le 1er jour).
+function parseFrenchDate(str) {
+  if (!str) return null;
+  const m = String(str).match(/(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})(?:\s+à\s+(\d{1,2})[hH](\d{2}))?/);
+  if (!m) return null;
+  const month = MONTHS_FR[m[2].toLowerCase()];
+  if (month === undefined) return null;
+  const hour = m[4] ? parseInt(m[4], 10) : 12;
+  const min = m[5] ? parseInt(m[5], 10) : 0;
+  return new Date(parseInt(m[3], 10), month, parseInt(m[1], 10), hour, min);
+}
+function fmtDateFr(d) {
+  return d.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long' });
+}
+function equipeLabel(row) {
+  return [row['categorie'], row['indice'], row['section']].filter(Boolean).join(' ');
+}
+
+function renderFFHBTable(rows, withScore) {
+  if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Aucun match trouvé sur cette période.</p>';
+  const trs = rows.map(r => {
+    const d = parseFrenchDate(r['date/heure']);
+    const confirmee = r['date_confirmee'] === 'True' || r['date_confirmee'] === true;
+    const heureMatch = String(r['date/heure'] || '').match(/\d{1,2}[hH]\d{2}/);
+    let dateLabel = d ? fmtDateFr(d) : (r['date/heure'] || '');
+    if (d && confirmee && heureMatch) dateLabel += ' à ' + heureMatch[0];
+    else if (d && !confirmee) dateLabel += ' (date à confirmer)';
+    const lieu = r['gymnase'] ? `${r['gymnase']}${r['ville'] ? ' — ' + r['ville'] : ''}` : '';
+    const lastCol = withScore ? `<td><b>${r['score'] || ''}</b></td>` : `<td>${lieu}</td>`;
+    return `<tr><td>${equipeLabel(r)}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td>${lastCol}</tr>`;
+  }).join('\n');
+  const lastHeader = withScore ? '<th>Score</th>' : '<th>Lieu</th>';
+  return `<div class="ffhb-wrapper">
+<style>
+.ffhb-wrapper { font-family: Arial, Helvetica, sans-serif; }
+.ffhb-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ffhb-table th, .ffhb-table td { border: 1px solid #ddd; padding: 7px 9px; text-align: left; }
+.ffhb-table thead th { background: #1a1a1a; color: #fff; }
+.ffhb-table tbody tr:nth-child(even) { background: #f7f7f7; }
+</style>
+<table class="ffhb-table"><thead><tr><th>Équipe</th><th>Date</th><th>Match</th>${lastHeader}</tr></thead><tbody>${trs}</tbody></table>
+</div>`;
+}
+
+async function loadCalendrierClub() {
+  const csvText = await fetchText(CALENDRIER_CLUB_URL);
+  return parseCSV(csvText);
+}
+
+// "Week-end à venir" = du prochain samedi 00:00 au dimanche 23:59 (aujourd'hui inclus si on est déjà sam/dim).
+function nextWeekendRange(now) {
+  const day = now.getDay();
+  const daysToSat = (6 - day + 7) % 7;
+  const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() + daysToSat);
+  const end = new Date(start); end.setDate(end.getDate() + 1); end.setHours(23, 59, 59, 999);
+  return [start, end];
+}
+// "Dernier week-end" = le samedi/dimanche le plus récent (aujourd'hui inclus si on est sam/dim).
+function lastWeekendRange(now) {
+  const day = now.getDay();
+  const sunday = new Date(now); sunday.setHours(23, 59, 59, 999); sunday.setDate(sunday.getDate() - day);
+  const saturday = new Date(sunday); saturday.setDate(saturday.getDate() - 1); saturday.setHours(0, 0, 0, 0);
+  return [saturday, sunday];
+}
+
+async function generateFFHBPlanning() {
+  setStatus('⏳ Chargement du calendrier FFHB...');
+  document.getElementById('result-panel').style.display = 'none';
+  try {
+    const rows = await loadCalendrierClub();
+    const [start, end] = nextWeekendRange(new Date());
+    const upcoming = rows
+      .filter(r => !String(r['score'] || '').trim())
+      .map(r => ({ r, d: parseFrenchDate(r['date/heure']) }))
+      .filter(({ d }) => d && d >= start && d <= end)
+      .sort((a, b) => a.d - b.d)
+      .map(({ r }) => r);
+
+    const html = renderFFHBTable(upcoming, false);
+    currentHTML = html; currentName = 'planning_weekend_ffhb.html';
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-name').textContent = currentName + ` (${upcoming.length} match(s))`;
+    document.getElementById('result-panel').style.display = 'block';
+    setStatus(`✅ ${upcoming.length} match(s) trouvé(s) pour le week-end du ${fmtDateFr(start)}.`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setStatus('❌ Erreur : ' + err.message, 'error');
+  }
+}
+
+async function generateFFHBResultats() {
+  setStatus('⏳ Chargement des résultats FFHB...');
+  document.getElementById('result-panel').style.display = 'none';
+  try {
+    const rows = await loadCalendrierClub();
+    const [start, end] = lastWeekendRange(new Date());
+    const past = rows
+      .filter(r => String(r['score'] || '').trim())
+      .map(r => ({ r, d: parseFrenchDate(r['date/heure']) }))
+      .filter(({ d }) => d && d >= start && d <= end)
+      .sort((a, b) => a.d - b.d)
+      .map(({ r }) => r);
+
+    const html = renderFFHBTable(past, true);
+    currentHTML = html; currentName = 'resultats_weekend_ffhb.html';
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-name').textContent = currentName + ` (${past.length} match(s))`;
+    document.getElementById('result-panel').style.display = 'block';
+    setStatus(`✅ ${past.length} résultat(s) trouvé(s) pour le week-end du ${fmtDateFr(start)}.`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setStatus('❌ Erreur : ' + err.message, 'error');
+  }
+}
+
+async function loadLastUpdate() {
+  const el = document.getElementById('last-update-info');
+  try {
+    const text = await fetchText(LAST_UPDATE_URL);
+    const data = JSON.parse(text);
+    const d = new Date(data.derniere_maj);
+    let msg = 'Dernière mise à jour FFHB : ' + d.toLocaleString('fr-FR');
+    if (data.mode === 'partiel') msg += ' (rafraîchissement partiel)';
+    if (data.erreurs && data.erreurs.length) msg += ' — ⚠️ erreurs sur ' + data.erreurs.length + ' équipe(s)';
+    el.textContent = msg;
+  } catch (err) {
+    el.textContent = 'Dernière mise à jour FFHB : inconnue.';
+  }
+}
+
+// ---------- Jeton GitHub (stocké en local uniquement) + déclenchement manuel ----------
+function getToken() { return localStorage.getItem(GH_TOKEN_KEY) || ''; }
+function setRefreshStatus(msg, cls) {
+  const el = document.getElementById('status-refresh');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+function refreshTokenUI() {
+  const has = !!getToken();
+  document.getElementById('gh-token-status').textContent = has
+    ? '🔑 Jeton enregistré sur cet appareil.'
+    : '⚠️ Aucun jeton enregistré — le rafraîchissement manuel ne fonctionnera pas (voir note en bas de page).';
+}
+function saveToken() {
+  const input = document.getElementById('gh-token-input');
+  const val = input.value.trim();
+  if (!val) { setRefreshStatus('Colle un jeton avant d\'enregistrer.', 'error'); return; }
+  localStorage.setItem(GH_TOKEN_KEY, val);
+  input.value = '';
+  refreshTokenUI();
+  setRefreshStatus('✅ Jeton enregistré dans ce navigateur.', 'ok');
+}
+function forgetToken() {
+  localStorage.removeItem(GH_TOKEN_KEY);
+  refreshTokenUI();
+  setRefreshStatus('Jeton oublié.', '');
+}
+
+async function loadTeamCheckboxes() {
+  const box = document.getElementById('team-checkboxes');
+  box.textContent = 'Chargement des équipes...';
+  try {
+    const csvText = await fetchText(TEAM_MAPPING_URL);
+    const rows = parseCSV(csvText).filter(r => (r['equipe_ffhb_proposee'] || '').trim() !== '');
+    if (!rows.length) { box.innerHTML = '<span class="muted">Aucune équipe dans le mapping.</span>'; return; }
+    box.innerHTML = rows.map(r => {
+      const label = [r['categorie'], r['indice'], r['section'], r['niveau'] ? '(' + r['niveau'] + ')' : ''].filter(Boolean).join(' ');
+      return `<label class="team-check"><input type="checkbox" value="${r['id']}"> ${label}</label>`;
+    }).join('');
+  } catch (err) {
+    box.innerHTML = '<span class="muted">Impossible de charger la liste des équipes (' + err.message + ').</span>';
+  }
+}
+
+async function triggerRefresh() {
+  const token = getToken();
+  if (!token) { setRefreshStatus('❌ Aucun jeton enregistré — colle ton jeton GitHub ci-dessus d\'abord.', 'error'); return; }
+  const checked = Array.from(document.querySelectorAll('#team-checkboxes input:checked')).map(el => el.value);
+  const teams = checked.join(',');
+  setRefreshStatus('⏳ Déclenchement du workflow GitHub Actions...');
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE}/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main', inputs: { teams } }),
+    });
+    if (res.status === 204) {
+      const cible = teams ? checked.length + ' équipe(s) ciblée(s)' : 'toutes les équipes';
+      setRefreshStatus('✅ Rafraîchissement lancé (' + cible + '). Ça prend quelques minutes — recharge la page ensuite pour voir les nouvelles données.', 'ok');
+    } else {
+      const text = await res.text();
+      setRefreshStatus('❌ Erreur GitHub (' + res.status + ') : ' + text, 'error');
+    }
+  } catch (err) {
+    setRefreshStatus('❌ Erreur réseau : ' + err.message, 'error');
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  refreshTokenUI();
+  loadTeamCheckboxes();
+  loadLastUpdate();
+});
 </script>
 </body>
 </html>

@@ -5,7 +5,9 @@ Villette d'Anthon, Isère) et ses ententes partenaires. Tout est construit
 comme une **application HTML statique unique** (`index.html`), sans backend,
 hébergée sur **GitHub Pages**. Elle lit ses données en direct depuis un
 Google Sheet publié en CSV, et génère plusieurs documents (plannings
-d'entraînement, "Team Book") entièrement côté navigateur.
+d'entraînement, "Team Book") entièrement côté navigateur. Elle affiche aussi
+le calendrier/résultats FFHB du club, scrapés côté CI (voir section dédiée
+plus bas) — le seul morceau du projet qui n'est pas 100% client-side.
 
 Ce fichier a été rédigé pour transférer le contexte d'un travail fait avec
 Claude (claude.ai) vers Claude Code, qui reprend la suite du développement.
@@ -159,20 +161,82 @@ librairie JS tierce). Structure interne :
   impératif en `@media print` (`max-height:none; overflow:visible;`) sinon
   l'impression tronque le contenu à la hauteur visible à l'écran.
 
-## Prochaine fonctionnalité demandée : "scraper FFHB"
+## Scraper FFHB (calendrier / résultats / classements)
 
-Julien veut ajouter un outil qui va chercher des informations sur les pages
-de poule FFHB (liens déjà présents dans les colonnes `P1.Lien` / `P2.Lien`
-du Google Sheet, un lien par équipe et par phase). **Le besoin exact n'a pas
-encore été détaillé avec Claude (claude.ai)** — à clarifier avec Julien avant
-de coder : veut-il un classement, un calendrier de matchs, des résultats,
-une synthèse par équipe/entente, une fréquence de mise à jour (à la demande,
-ou automatisée) ? Le format de sortie doit sans doute suivre la même logique
-que le reste de l'app (bouton dans `index.html`, génération côté client) —
-mais le scraping d'un site tiers depuis le navigateur du client posera
-probablement un problème de CORS similaire à celui déjà rencontré avec
-Google Sheets (voire pire, ffhandball.fr n'étant pas conçu pour être
-consommé en cross-origin). Une fonction serverless / proxy (GitHub Actions
-planifiée + commit d'un JSON de résultats dans le repo, par exemple) est
-probablement une meilleure architecture qu'un fetch direct depuis le
-navigateur — à évaluer avec Julien selon la fraîcheur des données souhaitée.
+Implémenté comme prévu ci-dessus dans la version précédente de ce fichier :
+**pas de scraping côté navigateur** (CORS + Playwright indisponible dans un
+onglet), mais un scraping côté CI (GitHub Actions) qui commite des fichiers
+statiques que `index.html` lit en `fetch()` same-origin, exactement comme il
+lit déjà le Google Sheet.
+
+### Fichiers
+
+- `scraper/scrape_ffhb.py` — briques de scraping réutilisables (Playwright +
+  BeautifulSoup) : parcours des journées d'une poule FFHB, extraction
+  calendrier/scores/classement, extraction gymnase/ville sur la page de
+  détail d'un match. Utilisable aussi en CLI interactif en local
+  (`python scrape_ffhb.py`) indépendamment du club — mono-poule/mono-équipe.
+- `scraper/scrape_ffhb_club.py` — orchestrateur multi-équipes club. Deux
+  modes :
+  - **Interactif local** (`python scrape_ffhb_club.py`, sans argument) :
+    menu 1/2, comme avant.
+  - **CLI non interactif** (utilisé par le workflow) :
+    `sync-mapping --mapping-dir scraper` puis
+    `scrape --mapping-dir scraper --outdir data --teams <ids ou vide>`.
+- `scraper/team_mapping.csv` — **versionné**, rapprochement nom d'équipe du
+  sheet (`Section`+`Indice équipe`+`Categorie`+phase) ↔ nom d'équipe affiché
+  sur ffhandball.fr. Colonne `id` = clé stable (slug) utilisée pour cibler
+  une équipe depuis l'UI ou le `workflow_dispatch`.
+- `data/calendrier_club.csv`, `data/classements_club.csv` — sorties
+  consolidées, une ligne par match/par classement avec colonnes
+  `section/indice/categorie/phase` en tête. Lues par `index.html`.
+- `data/last_update.json` — `{ derniere_maj, mode, equipes_rafraichies,
+  erreurs }`, affiché dans l'UI.
+- `.github/workflows/scrape-ffhb.yml` — cron dimanche soir +
+  `workflow_dispatch` (input `teams`, IDs séparés par virgules, vide = tout).
+
+### Piège important : le "club porteur" d'une entente
+
+Une entente de clubs (ex. `Entente Lyon Est Handball (F)`) fait jouer chaque
+équipe sous licence d'un seul club membre ("club porteur"), pas sous le nom
+de l'entente. La ligue liste souvent ce club porteur (ex. `ST PRIEST
+HANDBALL`, `AS LYON CALUIRE`) plutôt que le nom de l'entente sur
+ffhandball.fr — le rapprochement automatique (fuzzy matching sur mots-clés)
+échoue ou se trompe silencieusement sur ces cas, surtout en tout début de
+saison. C'est pour ça que `team_mapping.csv` **n'est jamais régénéré en
+entier automatiquement** : `sync-mapping` n'ajoute que les lignes vraiment
+nouvelles (nouvelle équipe/phase apparue dans le sheet) et ne touche jamais
+aux lignes déjà présentes, même si leur score de confiance était bas. Une
+correction manuelle dans ce fichier (commit direct) est donc définitive tant
+qu'elle n'est pas explicitement changée à la main.
+
+### Fusion sélective (`--teams`)
+
+Un run CI (manuel ou cron) ne réécrit dans `data/*.csv` que les lignes des
+équipes effectivement rafraîchies ce run-là (`_merge_by_key` dans
+`scrape_ffhb_club.py`, clé = `section+indice+categorie+phase`) — les autres
+équipes gardent leurs données du run précédent. Indispensable pour que le
+rafraîchissement manuel ciblé (cases à cocher dans l'UI) ne fasse pas
+disparaître les données des équipes non sélectionnées.
+
+### Cron et fuseau horaire
+
+GitHub Actions n'évalue les triggers `schedule:` que sur la **branche par
+défaut** (`main`) — le cron ne tournera qu'une fois ce workflow mergé, pas
+sur une branche de feature. Le cron est en UTC sans awareness du changement
+d'heure française ; `30 20 * * 0` (dimanche 20h30 UTC) tombe vers 21h30 CET
+(hiver) ou 22h30 CEST (été) — accepté comme compromis "dimanche soir" plutôt
+que de gérer deux cron saisonniers.
+
+### Rafraîchissement manuel depuis l'UI
+
+Le site restant 100% statique, le bouton "Lancer un rafraîchissement" appelle
+directement l'API GitHub (`POST
+/repos/{repo}/actions/workflows/scrape-ffhb.yml/dispatches`) depuis le
+navigateur, avec un jeton **fine-grained PAT stocké en `localStorage`**
+(jamais commité, jamais envoyé ailleurs qu'à `api.github.com`). Chaque
+admin doit créer son propre jeton une fois par appareil (scope minimal :
+`Actions: Read and write` sur ce repo uniquement). Confirmé fonctionnel :
+l'API GitHub répond bien en CORS à un `fetch()` cross-origin authentifié par
+`Authorization: Bearer <token>` (testé avec un faux jeton → 401 propre, pas
+d'erreur CORS bloquante).
