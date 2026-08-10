@@ -117,6 +117,16 @@
 </div>
 
 <div class="panel">
+  <h2>Situation d'une équipe</h2>
+  <div class="subtitle" style="margin-bottom:14px;">Classement complet de la poule et calendrier de toutes les journées (scores affichés dès qu'ils sont connus).</div>
+  <div class="btn-row">
+    <select id="team-select" class="token-input" style="flex:1; min-width:220px;"><option>Chargement...</option></select>
+    <button onclick="generateEquipeSituation()">📖 Afficher</button>
+  </div>
+  <div id="status-equipe" class="status"></div>
+</div>
+
+<div class="panel">
   <h2>Rafraîchir les données FFHB</h2>
   <div class="subtitle" style="margin-bottom:14px;">Rafraîchissement automatique chaque dimanche soir. Pour forcer une mise à jour immédiate, renseigne ton jeton GitHub une fois (voir note en bas de page) puis utilise le bouton ci-dessous.</div>
   <div class="btn-row" style="margin-bottom:12px;">
@@ -802,6 +812,7 @@ function downloadResult() {
 
 const TEAM_MAPPING_URL = 'scraper/team_mapping.csv';
 const CALENDRIER_CLUB_URL = 'data/calendrier_club.csv';
+const CLASSEMENTS_CLUB_URL = 'data/classements_club.csv';
 const LAST_UPDATE_URL = 'data/last_update.json';
 const GH_REPO = 'sportingvillette-beep/sv-planning-entrainements';
 const GH_WORKFLOW_FILE = 'scrape-ffhb.yml';
@@ -812,6 +823,19 @@ async function fetchText(url) {
   const res = await fetch(url + sep + '_=' + Date.now(), { cache: 'no-store' });
   if (!res.ok) throw new Error('HTTP ' + res.status + ' sur ' + url);
   return await res.text();
+}
+
+// team_mapping.csv est utilisé à la fois par les cases à cocher (rafraîchissement) et
+// le sélecteur "Situation d'une équipe" — un seul fetch, mis en cache.
+let _teamMappingRows = null;
+async function loadTeamMappingRows() {
+  if (_teamMappingRows) return _teamMappingRows;
+  const csvText = await fetchText(TEAM_MAPPING_URL);
+  _teamMappingRows = parseCSV(csvText).filter(r => (r['equipe_ffhb_proposee'] || '').trim() !== '');
+  return _teamMappingRows;
+}
+function teamMappingLabel(r) {
+  return [r['categorie'], r['indice'], r['section'], r['niveau'] ? '(' + r['niveau'] + ')' : ''].filter(Boolean).join(' ');
 }
 
 const MONTHS_FR = {
@@ -934,6 +958,101 @@ async function generateFFHBResultats() {
   }
 }
 
+// ---------- Situation complète d'une équipe (classement + calendrier toutes journées) ----------
+function keyMatch(row, ref) {
+  return (row['section'] || '') === (ref['section'] || '')
+    && (row['indice'] || '') === (ref['indice'] || '')
+    && (row['categorie'] || '') === (ref['categorie'] || '')
+    && (row['phase'] || '') === (ref['phase'] || '');
+}
+
+function renderClassementTable(rows, highlightName) {
+  if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Classement indisponible.</p>';
+  const cols = Object.keys(rows[0]).filter(c => !['section', 'indice', 'categorie', 'phase'].includes(c));
+  const head = cols.map(c => `<th>${c}</th>`).join('');
+  const body = rows.map(r => {
+    const isUs = highlightName && (r['Club'] || '').toUpperCase().includes(highlightName.toUpperCase());
+    const tds = cols.map(c => `<td>${r[c] ?? ''}</td>`).join('');
+    return `<tr${isUs ? ' class="us"' : ''}>${tds}</tr>`;
+  }).join('\n');
+  return `<table class="ffhb-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function renderCalendrierCompletTable(rows) {
+  if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Aucun match trouvé.</p>';
+  const sorted = [...rows].sort((a, b) => (parseInt(a['journée'], 10) || 0) - (parseInt(b['journée'], 10) || 0));
+  const trs = sorted.map(r => {
+    const d = parseFrenchDate(r['date/heure']);
+    const confirmee = r['date_confirmee'] === 'True' || r['date_confirmee'] === true;
+    const heureMatch = String(r['date/heure'] || '').match(/\d{1,2}[hH]\d{2}/);
+    let dateLabel = d ? fmtDateFr(d) : (r['date/heure'] || '');
+    if (d && confirmee && heureMatch) dateLabel += ' à ' + heureMatch[0];
+    else if (d && !confirmee) dateLabel += ' (à confirmer)';
+    const lieu = r['gymnase'] ? `${r['gymnase']}${r['ville'] ? ' — ' + r['ville'] : ''}` : '';
+    const score = String(r['score'] || '').trim() ? `<b>${r['score']}</b>` : '<span style="color:#999;">à venir</span>';
+    return `<tr><td>${r['journée']}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td><td>${score}</td><td>${lieu}</td></tr>`;
+  }).join('\n');
+  return `<table class="ffhb-table"><thead><tr><th>J</th><th>Date</th><th>Match</th><th>Score</th><th>Lieu</th></tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+async function loadTeamSelect() {
+  const sel = document.getElementById('team-select');
+  try {
+    const rows = await loadTeamMappingRows();
+    if (!rows.length) { sel.innerHTML = '<option>Aucune équipe</option>'; return; }
+    sel.innerHTML = rows.map(r => `<option value="${r['id']}">${teamMappingLabel(r)}</option>`).join('');
+  } catch (err) {
+    sel.innerHTML = '<option>Erreur de chargement</option>';
+  }
+}
+
+async function generateEquipeSituation() {
+  const sel = document.getElementById('team-select');
+  const id = sel.value;
+  const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : id;
+  const statusEl = document.getElementById('status-equipe');
+  statusEl.className = 'status';
+  statusEl.textContent = '⏳ Chargement de la situation de ' + label + '...';
+  document.getElementById('result-panel').style.display = 'none';
+  try {
+    const mappingRows = await loadTeamMappingRows();
+    const ref = mappingRows.find(r => r['id'] === id);
+    if (!ref) throw new Error("Équipe introuvable dans le mapping.");
+
+    const [calText, clText] = await Promise.all([fetchText(CALENDRIER_CLUB_URL), fetchText(CLASSEMENTS_CLUB_URL)]);
+    const calRows = parseCSV(calText).filter(r => keyMatch(r, ref));
+    const clRows = parseCSV(clText).filter(r => keyMatch(r, ref));
+
+    const html = `<div class="ffhb-wrapper">
+<style>
+.ffhb-wrapper { font-family: Arial, Helvetica, sans-serif; }
+.ffhb-wrapper h3 { margin: 18px 0 8px; color: #1a1a1a; }
+.ffhb-wrapper h3:first-child { margin-top: 0; }
+.ffhb-table { border-collapse: collapse; width: 100%; font-size: 13px; margin-bottom: 10px; }
+.ffhb-table th, .ffhb-table td { border: 1px solid #ddd; padding: 7px 9px; text-align: left; }
+.ffhb-table thead th { background: #1a1a1a; color: #fff; }
+.ffhb-table tbody tr:nth-child(even) { background: #f7f7f7; }
+.ffhb-table tr.us { background: #fff3b0 !important; font-weight: bold; }
+</style>
+<h3>Classement — ${label}</h3>
+${renderClassementTable(clRows, ref['equipe_ffhb_proposee'])}
+<h3>Calendrier complet</h3>
+${renderCalendrierCompletTable(calRows)}
+</div>`;
+
+    currentHTML = html; currentName = 'situation_' + slugify(label) + '.html';
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-name').textContent = currentName;
+    document.getElementById('result-panel').style.display = 'block';
+    statusEl.textContent = `✅ ${calRows.length} match(s), classement de ${clRows.length} équipe(s).`;
+    statusEl.className = 'status ok';
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = '❌ Erreur : ' + err.message;
+    statusEl.className = 'status error';
+  }
+}
+
 async function loadLastUpdate() {
   const el = document.getElementById('last-update-info');
   try {
@@ -981,13 +1100,9 @@ async function loadTeamCheckboxes() {
   const box = document.getElementById('team-checkboxes');
   box.textContent = 'Chargement des équipes...';
   try {
-    const csvText = await fetchText(TEAM_MAPPING_URL);
-    const rows = parseCSV(csvText).filter(r => (r['equipe_ffhb_proposee'] || '').trim() !== '');
+    const rows = await loadTeamMappingRows();
     if (!rows.length) { box.innerHTML = '<span class="muted">Aucune équipe dans le mapping.</span>'; return; }
-    box.innerHTML = rows.map(r => {
-      const label = [r['categorie'], r['indice'], r['section'], r['niveau'] ? '(' + r['niveau'] + ')' : ''].filter(Boolean).join(' ');
-      return `<label class="team-check"><input type="checkbox" value="${r['id']}"> ${label}</label>`;
-    }).join('');
+    box.innerHTML = rows.map(r => `<label class="team-check"><input type="checkbox" value="${r['id']}"> ${teamMappingLabel(r)}</label>`).join('');
   } catch (err) {
     box.innerHTML = '<span class="muted">Impossible de charger la liste des équipes (' + err.message + ').</span>';
   }
@@ -1025,6 +1140,7 @@ async function triggerRefresh() {
 window.addEventListener('DOMContentLoaded', () => {
   refreshTokenUI();
   loadTeamCheckboxes();
+  loadTeamSelect();
   loadLastUpdate();
 });
 </script>
