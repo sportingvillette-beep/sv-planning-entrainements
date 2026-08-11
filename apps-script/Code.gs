@@ -1,28 +1,49 @@
 /**
  * Web App unique pour Sporting Villette : reçoit les matchs ajoutés/mis à jour par le
- * scraper FFHB (action "add_match"). Remplace Make.com pour cette partie du flux.
- * Les actions score/photo (ex-scénarios Make) pourront être ajoutées ici plus tard,
- * une fois validées séparément (pas dans cette première version).
+ * scraper FFHB (action "add_match"), et remplace maintenant aussi les 2 scénarios Make.com
+ * des formulaires club (action "add_score" pour le score en direct, "add_photo" pour la
+ * photo de fin de match, uploadée sur Google Drive à la place de Dropbox).
  *
- * DÉPLOIEMENT :
+ * Les formulaires (form-score-club-2-, form-score-club-photo-only) sont des pages HTML
+ * publiques : ils postent en multipart/form-data (pas de JSON) et utilisent un secret
+ * DIFFÉRENT de celui du scraper (FORM_SHARED_SECRET, moins sensible) pour que sa fuite
+ * éventuelle dans ce code JS public ne compromette pas SHARED_SECRET (utilisé par le
+ * scraper côté GitHub Actions, jamais exposé).
+ *
+ * MISE À JOUR (cas normal — ce Web App est déjà déployé en prod pour le scraper FFHB,
+ * l'URL /exec existe déjà et est en dur dans index.html + les 2 repos formulaires) :
  * 1) Ouvrir le Google Sheet "Com matchs réseaux" > Extensions > Apps Script.
- * 2) Coller ce fichier (remplace le contenu par défaut de Code.gs).
- * 3) Remplacer SHARED_SECRET ci-dessous par une valeur secrète de ton choix.
- * 4) Déployer > Nouveau déploiement > Type "Application Web".
- *    - Exécuter en tant que : Moi
- *    - Qui a accès : Tout le monde
- * 5) Copier l'URL de déploiement (se termine par /exec).
- * 6) Dans le repo GitHub, Settings > Secrets and variables > Actions, créer :
- *    - SHEET_WEBAPP_URL = l'URL copiée à l'étape 5
- *    - SHEET_WEBAPP_SECRET = la même valeur que SHARED_SECRET ci-dessous
+ * 2) Coller ce fichier (remplace le contenu de Code.gs).
+ * 3) Remplacer SHARED_SECRET et FORM_SHARED_SECRET ci-dessous par deux valeurs
+ *    secrètes distinctes de ton choix (garder la même valeur pour SHARED_SECRET que
+ *    celle déjà utilisée si tu ne veux pas casser le scraper existant).
+ * 4) Créer un dossier Google Drive "Photos matchs" (sur le compte associatif), ouvrir
+ *    son ID dans l'URL (drive.google.com/drive/folders/<ID>) et le coller dans
+ *    PHOTOS_FOLDER_ID ci-dessous.
+ * 5) Exécuter manuellement n'importe quelle fonction depuis l'éditeur (bouton "Exécuter",
+ *    n'importe laquelle dans le menu déroulant) — Drive est un nouveau service pour ce
+ *    projet, ça déclenche l'écran d'autorisation. Accepter l'accès Drive avec le compte
+ *    propriétaire du Sheet. Sans ça, add_photo échoue avec "Vous n'êtes pas autorisé à
+ *    appeler DriveApp...", même après un redéploiement.
+ * 6) Déployer > Gérer les déploiements > éditer (icône crayon) > Nouvelle version.
+ *    NE PAS faire "Nouveau déploiement" ici : ça changerait l'URL /exec et casserait
+ *    le scraper + le site + les formulaires qui ont tous l'ancienne URL en dur.
+ * 7) Dans form-score-club-2-/index.html et form-score-club-photo-only/index.html,
+ *    mettre à jour CONFIG.webhookSecret avec la même valeur que FORM_SHARED_SECRET
+ *    ci-dessus (CONFIG.webhookUrl ne change pas, cf point 6).
  *
- * À chaque modification de ce code après un déploiement existant, utiliser
- * Déployer > Gérer les déploiements > éditer (icône crayon) > Nouvelle version,
- * plutôt que de créer un nouveau déploiement (sinon l'URL change).
+ * PREMIER DÉPLOIEMENT (seulement si ce Web App n'existe pas encore, ex. nouveau club
+ * qui reprendrait ce projet) : étapes 1 à 4 ci-dessus, puis Déployer > Nouveau
+ * déploiement > Type "Application Web" (Exécuter en tant que : Moi ; Qui a accès :
+ * Tout le monde), copier l'URL /exec obtenue, et la reporter dans le repo GitHub
+ * (Settings > Secrets and variables > Actions : SHEET_WEBAPP_URL + SHEET_WEBAPP_SECRET
+ * = SHARED_SECRET) ainsi que dans CONFIG.webhookUrl des 2 repos formulaires.
  */
 
 const SHEET_NAME = 'Matchs';
-const SHARED_SECRET = 'CHANGE_MOI'; // remplacer avant déploiement
+const SHARED_SECRET = '7x!K9#vP2$mQ8%rL4*'; // remplacer avant déploiement — scraper uniquement
+const FORM_SHARED_SECRET = 'wpFt6IaS4QDZCodB'; // remplacer avant déploiement — formulaires publics uniquement
+const PHOTOS_FOLDER_ID = '1gwZToQYNPgDnDusnAAQtuHbff5fzPjTK'; // ID du dossier Drive "Photos matchs"
 const PROGRESS_CACHE_KEY = 'scrape_progress';
 const PROGRESS_CACHE_TTL = 21600; // 6h (max autorisé par CacheService)
 
@@ -40,6 +61,24 @@ const JOURS_FR = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
 function doPost(e) {
   try {
+    // Les formulaires club (score/photo) postent en multipart/form-data (nécessaire pour
+    // envoyer un fichier) : les champs arrivent dans e.parameter, pas e.postData.contents.
+    // Pour une requête multipart, Apps Script ne peuple pas forcément e.postData (contents
+    // undefined) — on ne passe donc par le parsing JSON que si le type est explicitement
+    // application/json (seul le scraper, JSON classique, envoie ce type) ; tout le reste
+    // est traité comme des champs de formulaire (e.parameter).
+    const isJson = e.postData && e.postData.type === 'application/json';
+
+    if (!isJson) {
+      const p = e.parameter;
+      if (p.secret !== FORM_SHARED_SECRET) {
+        return jsonResponse({ ok: false, error: 'secret invalide' });
+      }
+      if (p.action === 'add_score') return jsonResponse(updateScore(p));
+      if (p.action === 'add_photo') return jsonResponse(addPhoto(p));
+      return jsonResponse({ ok: false, error: 'action inconnue: ' + p.action });
+    }
+
     const body = JSON.parse(e.postData.contents);
     if (body.secret !== SHARED_SECRET) {
       return jsonResponse({ ok: false, error: 'secret invalide' });
@@ -145,6 +184,74 @@ function upsertMatch(m) {
 
   sheet.appendRow(newRow);
   return { ok: true, action: 'inserted' };
+}
+
+/**
+ * Formulaire score en direct (remplace le scénario Make "Formulaire nouveau score",
+ * route "sans photo" — la route "avec photo_finale" était du code mort, non reproduite).
+ * Écrase toujours Eq1Score/Eq2Score/WinLose : contrairement au scraper, ici c'est une
+ * saisie humaine explicite, donc source de vérité la plus récente.
+ */
+function updateScore(p) {
+  if (!p.match_id) return { ok: false, error: 'match_id manquant' };
+  const sheet = getSheet();
+  const rowNumber = findRowByCode(sheet, p.match_id);
+  if (!rowNumber) return { ok: false, error: 'match introuvable: ' + p.match_id };
+
+  const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
+  const current = rowRange.getValues()[0];
+  if (p.score_dom !== undefined && p.score_dom !== '') current[colIndex('Eq1Score')] = p.score_dom;
+  if (p.score_ext !== undefined && p.score_ext !== '') current[colIndex('Eq2Score')] = p.score_ext;
+  if (p.winlose) current[colIndex('WinLose')] = p.winlose;
+  rowRange.setValues([current]);
+  return { ok: true, action: 'score_updated', row: rowNumber };
+}
+
+/**
+ * Formulaire photo de fin de match (remplace les 2 scénarios Make qui uploadaient sur
+ * Dropbox sans jamais écrire dans la sheet). Ici on upload sur Drive (dossier dédié par
+ * match) et on écrit le lien dans PhotoEq — un envoi ultérieur pour le même match
+ * remplace le lien précédent (un seul "photo résultat" attendu par match, cf CLAUDE.md).
+ *
+ * La photo arrive en base64 (p.photo_base64 + p.photo_name + p.photo_type), pas en Blob
+ * multipart natif : testé en prod, Apps Script ne peuple PAS e.parameter avec un Blob pour
+ * un fichier envoyé via un vrai POST multipart/form-data externe (seuls les champs texte
+ * arrivent) — contrairement au comportement d'un <input type=file> dans un formulaire
+ * HtmlService classique. D'où l'encodage base64 côté client (voir les 2 repos formulaires).
+ *
+ * Nécessite le scope Drive en écriture (pas seulement lecture) : après avoir ajouté ce
+ * code, il faut exécuter manuellement une fonction du projet une fois depuis l'éditeur
+ * Apps Script pour déclencher l'écran d'autorisation et accepter l'accès Drive — sinon
+ * le Web App déployé échoue avec "Vous n'êtes pas autorisé à appeler DriveApp...".
+ */
+function addPhoto(p) {
+  if (!p.match_id) return { ok: false, error: 'match_id manquant' };
+  if (!p.photo_base64) return { ok: false, error: 'photo manquante' };
+  const sheet = getSheet();
+  const rowNumber = findRowByCode(sheet, p.match_id);
+  if (!rowNumber) return { ok: false, error: 'match introuvable: ' + p.match_id };
+
+  const bytes = Utilities.base64Decode(p.photo_base64);
+  const blob = Utilities.newBlob(bytes, p.photo_type || 'image/jpeg', p.photo_name || (p.match_id + '.jpg'));
+
+  const parentFolder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
+  const matchFolder = getOrCreateSubfolder(parentFolder, p.match_id);
+  const file = matchFolder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const url = 'https://lh3.googleusercontent.com/d/' + file.getId();
+
+  const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
+  const current = rowRange.getValues()[0];
+  current[colIndex('PhotoEq')] = url;
+  rowRange.setValues([current]);
+  return { ok: true, action: 'photo_added', url: url, row: rowNumber };
+}
+
+function getOrCreateSubfolder(parent, name) {
+  const safeName = String(name).trim();
+  const existing = parent.getFoldersByName(safeName);
+  if (existing.hasNext()) return existing.next();
+  return parent.createFolder(safeName);
 }
 
 function formatInstaDate(dateStr, heureStr) {
