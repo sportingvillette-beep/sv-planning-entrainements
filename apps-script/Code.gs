@@ -10,29 +10,29 @@
  * éventuelle dans ce code JS public ne compromette pas SHARED_SECRET (utilisé par le
  * scraper côté GitHub Actions, jamais exposé).
  *
- * DÉPLOIEMENT :
+ * MISE À JOUR (cas normal — ce Web App est déjà déployé en prod pour le scraper FFHB,
+ * l'URL /exec existe déjà et est en dur dans index.html + les 2 repos formulaires) :
  * 1) Ouvrir le Google Sheet "Com matchs réseaux" > Extensions > Apps Script.
- * 2) Coller ce fichier (remplace le contenu par défaut de Code.gs).
+ * 2) Coller ce fichier (remplace le contenu de Code.gs).
  * 3) Remplacer SHARED_SECRET et FORM_SHARED_SECRET ci-dessous par deux valeurs
- *    secrètes distinctes de ton choix.
+ *    secrètes distinctes de ton choix (garder la même valeur pour SHARED_SECRET que
+ *    celle déjà utilisée si tu ne veux pas casser le scraper existant).
  * 4) Créer un dossier Google Drive "Photos matchs" (sur le compte associatif), ouvrir
  *    son ID dans l'URL (drive.google.com/drive/folders/<ID>) et le coller dans
  *    PHOTOS_FOLDER_ID ci-dessous.
- * 5) Déployer > Nouveau déploiement > Type "Application Web".
- *    - Exécuter en tant que : Moi
- *    - Qui a accès : Tout le monde
- * 6) Copier l'URL de déploiement (se termine par /exec).
- * 7) Dans le repo GitHub sv-planning-entrainements, Settings > Secrets and variables >
- *    Actions, créer :
- *    - SHEET_WEBAPP_URL = l'URL copiée à l'étape 6
- *    - SHEET_WEBAPP_SECRET = la même valeur que SHARED_SECRET ci-dessous
- * 8) Dans form-score-club-2-/index.html et form-score-club-photo-only/index.html,
- *    mettre à jour CONFIG.webhookUrl (même URL qu'à l'étape 6) et CONFIG.webhookSecret
- *    (même valeur que FORM_SHARED_SECRET ci-dessous).
+ * 5) Déployer > Gérer les déploiements > éditer (icône crayon) > Nouvelle version.
+ *    NE PAS faire "Nouveau déploiement" ici : ça changerait l'URL /exec et casserait
+ *    le scraper + le site + les formulaires qui ont tous l'ancienne URL en dur.
+ * 6) Dans form-score-club-2-/index.html et form-score-club-photo-only/index.html,
+ *    mettre à jour CONFIG.webhookSecret avec la même valeur que FORM_SHARED_SECRET
+ *    ci-dessus (CONFIG.webhookUrl ne change pas, cf point 5).
  *
- * À chaque modification de ce code après un déploiement existant, utiliser
- * Déployer > Gérer les déploiements > éditer (icône crayon) > Nouvelle version,
- * plutôt que de créer un nouveau déploiement (sinon l'URL change).
+ * PREMIER DÉPLOIEMENT (seulement si ce Web App n'existe pas encore, ex. nouveau club
+ * qui reprendrait ce projet) : étapes 1 à 4 ci-dessus, puis Déployer > Nouveau
+ * déploiement > Type "Application Web" (Exécuter en tant que : Moi ; Qui a accès :
+ * Tout le monde), copier l'URL /exec obtenue, et la reporter dans le repo GitHub
+ * (Settings > Secrets and variables > Actions : SHEET_WEBAPP_URL + SHEET_WEBAPP_SECRET
+ * = SHARED_SECRET) ainsi que dans CONFIG.webhookUrl des 2 repos formulaires.
  */
 
 const SHEET_NAME = 'Matchs';
