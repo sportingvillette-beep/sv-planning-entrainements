@@ -86,6 +86,7 @@
   <h2>Base de données</h2>
   <div class="btn-row">
     <a class="btn-link" href="https://docs.google.com/spreadsheets/d/1viw-QLYXpA4jNV_bHhfCsBtJ8ueaC0ujXfqtPPpIAq0/edit?usp=sharing" target="_blank" rel="noopener">📊 Ouvrir la base équipes (Google Sheet)</a>
+    <a class="btn-link" href="https://docs.google.com/spreadsheets/d/1BoAaOYLMMAhlHO8YGhHvfE-_uLzJ1kUVRiDSzBhLo6E/edit?gid=0#gid=0" target="_blank" rel="noopener">📊 Ouvrir la base matchs (Google Sheet)</a>
   </div>
 </div>
 
@@ -302,8 +303,8 @@ function buildRecords(rowsRaw) {
       anneesNaissance: clean(row['Années de naissance']),
       prixLicence: clean(row['Prix_Licence']),
       entraineurs,
-      p1: { niveau: clean(row['P1.Niveau']), poule: clean(row['P1.Poule']) },
-      p2: { niveau: clean(row['P2.Niveau']), poule: clean(row['P2.Poule']) },
+      p1: { niveau: clean(row['P1.Niveau']), poule: clean(row['P1.Poule']), lien: clean(row['P1.Lien']) },
+      p2: { niveau: clean(row['P2.Niveau']), poule: clean(row['P2.Poule']), lien: clean(row['P2.Lien']) },
     };
   });
   records.sort((a,b) => {
@@ -634,13 +635,13 @@ function renderTeamBook(records, sectionName) {
       ? `<p>${r.entraineurs.join(', ')}</p>`
       : `<p class="tb-empty">À confirmer</p>`;
 
-    let champBlock = '';
-    if (r.p1.niveau) {
-      champBlock += `<p><b>Phase 1</b> : ${r.p1.niveau}${r.p1.poule ? ' (' + r.p1.poule + ')' : ''}</p>`;
+    function champLine(label, phase) {
+      if (!phase.niveau) return '';
+      const poulePart = phase.poule ? ` (poule ${phase.poule})` : '';
+      const linkPart = phase.lien ? ` — <a href="${phase.lien}" target="_blank" rel="noopener">Voir la poule</a>` : '';
+      return `<p><b>${label}</b> : ${phase.niveau}${poulePart}${linkPart}</p>`;
     }
-    if (r.p2.niveau) {
-      champBlock += `<p><b>Phase 2</b> : ${r.p2.niveau}${r.p2.poule ? ' (' + r.p2.poule + ')' : ''}</p>`;
-    }
+    let champBlock = champLine('Phase 1', r.p1) + champLine('Phase 2', r.p2);
     if (!champBlock) champBlock = `<p class="tb-empty">Non communiqué</p>`;
 
     const metaParts = [];
