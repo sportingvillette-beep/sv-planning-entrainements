@@ -219,6 +219,14 @@ function updateScore(p) {
  * arrivent) — contrairement au comportement d'un <input type=file> dans un formulaire
  * HtmlService classique. D'où l'encodage base64 côté client (voir les 2 repos formulaires).
  */
+// TEMPORAIRE — à sélectionner et exécuter manuellement (bouton "Exécuter") depuis l'éditeur
+// pour forcer/vérifier l'autorisation du scope Drive. À retirer avant merge.
+function debugAuthDrive() {
+  const folder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
+  Logger.log('OK, dossier trouvé : ' + folder.getName());
+  return folder.getName();
+}
+
 // TEMPORAIRE — diagnostic addPhoto, lisible via doGet?action=debug_last_error. À retirer avant merge.
 const DEBUG_CACHE_KEY = 'debug_last_addphoto';
 function debugTrace(steps) {
