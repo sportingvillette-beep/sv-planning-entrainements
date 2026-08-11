@@ -20,12 +20,17 @@
  * 4) Créer un dossier Google Drive "Photos matchs" (sur le compte associatif), ouvrir
  *    son ID dans l'URL (drive.google.com/drive/folders/<ID>) et le coller dans
  *    PHOTOS_FOLDER_ID ci-dessous.
- * 5) Déployer > Gérer les déploiements > éditer (icône crayon) > Nouvelle version.
+ * 5) Exécuter manuellement n'importe quelle fonction depuis l'éditeur (bouton "Exécuter",
+ *    n'importe laquelle dans le menu déroulant) — Drive est un nouveau service pour ce
+ *    projet, ça déclenche l'écran d'autorisation. Accepter l'accès Drive avec le compte
+ *    propriétaire du Sheet. Sans ça, add_photo échoue avec "Vous n'êtes pas autorisé à
+ *    appeler DriveApp...", même après un redéploiement.
+ * 6) Déployer > Gérer les déploiements > éditer (icône crayon) > Nouvelle version.
  *    NE PAS faire "Nouveau déploiement" ici : ça changerait l'URL /exec et casserait
  *    le scraper + le site + les formulaires qui ont tous l'ancienne URL en dur.
- * 6) Dans form-score-club-2-/index.html et form-score-club-photo-only/index.html,
+ * 7) Dans form-score-club-2-/index.html et form-score-club-photo-only/index.html,
  *    mettre à jour CONFIG.webhookSecret avec la même valeur que FORM_SHARED_SECRET
- *    ci-dessus (CONFIG.webhookUrl ne change pas, cf point 5).
+ *    ci-dessus (CONFIG.webhookUrl ne change pas, cf point 6).
  *
  * PREMIER DÉPLOIEMENT (seulement si ce Web App n'existe pas encore, ex. nouveau club
  * qui reprendrait ce projet) : étapes 1 à 4 ci-dessus, puis Déployer > Nouveau
@@ -98,11 +103,6 @@ function doPost(e) {
 function doGet(e) {
   if (e.parameter.action === 'progress') {
     const raw = CacheService.getScriptCache().get(PROGRESS_CACHE_KEY);
-    return jsonResponse(raw ? JSON.parse(raw) : null);
-  }
-  // TEMPORAIRE — diagnostic addPhoto. À retirer avant merge.
-  if (e.parameter.action === 'debug_last_error') {
-    const raw = CacheService.getScriptCache().get(DEBUG_CACHE_KEY);
     return jsonResponse(raw ? JSON.parse(raw) : null);
   }
   return jsonResponse({ ok: false, error: 'action inconnue' });
@@ -218,67 +218,27 @@ function updateScore(p) {
  * un fichier envoyé via un vrai POST multipart/form-data externe (seuls les champs texte
  * arrivent) — contrairement au comportement d'un <input type=file> dans un formulaire
  * HtmlService classique. D'où l'encodage base64 côté client (voir les 2 repos formulaires).
+ *
+ * Nécessite le scope Drive en écriture (pas seulement lecture) : après avoir ajouté ce
+ * code, il faut exécuter manuellement une fonction du projet une fois depuis l'éditeur
+ * Apps Script pour déclencher l'écran d'autorisation et accepter l'accès Drive — sinon
+ * le Web App déployé échoue avec "Vous n'êtes pas autorisé à appeler DriveApp...".
  */
-// TEMPORAIRE — à sélectionner et exécuter manuellement (bouton "Exécuter") depuis l'éditeur
-// pour forcer/vérifier l'autorisation du scope Drive. À retirer avant merge.
-function debugAuthDrive() {
-  const folder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
-  Logger.log('OK lecture, dossier trouvé : ' + folder.getName());
-  const testFolder = folder.createFolder('_debug_auth_test');
-  Logger.log('OK création dossier : ' + testFolder.getId());
-  const testFile = testFolder.createFile(Utilities.newBlob('test', 'text/plain', 'test.txt'));
-  testFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  Logger.log('OK création + partage fichier : ' + testFile.getId());
-  testFolder.setTrashed(true);
-  Logger.log('OK suppression dossier de test (corbeille). Tout est autorisé.');
-}
-
-// TEMPORAIRE — diagnostic addPhoto, lisible via doGet?action=debug_last_error. À retirer avant merge.
-const DEBUG_CACHE_KEY = 'debug_last_addphoto';
-function debugTrace(steps) {
-  CacheService.getScriptCache().put(DEBUG_CACHE_KEY, JSON.stringify({ steps: steps, at: new Date().toISOString() }), 3600);
-}
-
 function addPhoto(p) {
-  const steps = ['start'];
-  try {
-    if (!p.match_id) return { ok: false, error: 'match_id manquant' };
-    if (!p.photo_base64) return { ok: false, error: 'photo manquante' };
-    steps.push('inputs ok, photo_base64 length=' + p.photo_base64.length);
-    const sheet = getSheet();
-    steps.push('got sheet');
-    const rowNumber = findRowByCode(sheet, p.match_id);
-    if (!rowNumber) return { ok: false, error: 'match introuvable: ' + p.match_id };
-    steps.push('found row ' + rowNumber);
+  if (!p.match_id) return { ok: false, error: 'match_id manquant' };
+  if (!p.photo_base64) return { ok: false, error: 'photo manquante' };
+  const sheet = getSheet();
+  const rowNumber = findRowByCode(sheet, p.match_id);
+  if (!rowNumber) return { ok: false, error: 'match introuvable: ' + p.match_id };
 
-    const bytes = Utilities.base64Decode(p.photo_base64);
-    steps.push('decoded bytes: ' + bytes.length);
-    const blob = Utilities.newBlob(bytes, p.photo_type || 'image/jpeg', p.photo_name || (p.match_id + '.jpg'));
-    steps.push('made blob');
+  const bytes = Utilities.base64Decode(p.photo_base64);
+  const blob = Utilities.newBlob(bytes, p.photo_type || 'image/jpeg', p.photo_name || (p.match_id + '.jpg'));
 
-    const parentFolder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
-    steps.push('got parent folder: ' + parentFolder.getName());
-    const matchFolder = getOrCreateSubfolder(parentFolder, p.match_id);
-    steps.push('got match folder: ' + matchFolder.getName());
-    const file = matchFolder.createFile(blob);
-    steps.push('created file: ' + file.getId());
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    steps.push('set sharing');
-    const url = 'https://lh3.googleusercontent.com/d/' + file.getId();
-    steps.push('computed url');
-
-    const result = finishAddPhoto(sheet, rowNumber, url);
-    steps.push('wrote sheet');
-    debugTrace(steps);
-    return result;
-  } catch (err) {
-    steps.push('ERROR: ' + String(err) + (err.stack ? ' | stack: ' + err.stack : ''));
-    debugTrace(steps);
-    return { ok: false, error: String(err) };
-  }
-}
-
-function finishAddPhoto(sheet, rowNumber, url) {
+  const parentFolder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
+  const matchFolder = getOrCreateSubfolder(parentFolder, p.match_id);
+  const file = matchFolder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const url = 'https://lh3.googleusercontent.com/d/' + file.getId();
 
   const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
   const current = rowRange.getValues()[0];
