@@ -223,8 +223,14 @@ function updateScore(p) {
 // pour forcer/vérifier l'autorisation du scope Drive. À retirer avant merge.
 function debugAuthDrive() {
   const folder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
-  Logger.log('OK, dossier trouvé : ' + folder.getName());
-  return folder.getName();
+  Logger.log('OK lecture, dossier trouvé : ' + folder.getName());
+  const testFolder = folder.createFolder('_debug_auth_test');
+  Logger.log('OK création dossier : ' + testFolder.getId());
+  const testFile = testFolder.createFile(Utilities.newBlob('test', 'text/plain', 'test.txt'));
+  testFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  Logger.log('OK création + partage fichier : ' + testFile.getId());
+  testFolder.setTrashed(true);
+  Logger.log('OK suppression dossier de test (corbeille). Tout est autorisé.');
 }
 
 // TEMPORAIRE — diagnostic addPhoto, lisible via doGet?action=debug_last_error. À retirer avant merge.
