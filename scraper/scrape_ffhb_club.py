@@ -482,8 +482,12 @@ def _merge_by_key(prev: pd.DataFrame, new: pd.DataFrame, key_cols: list) -> pd.D
         return new
     if new is None or new.empty:
         return prev
-    new_keys = set(tuple(x) for x in new[key_cols].itertuples(index=False, name=None))
-    keep_mask = ~prev[key_cols].apply(lambda r: tuple(r) in new_keys, axis=1)
+    # fillna("") est indispensable : NaN != NaN en Python/pandas, donc sans ça les
+    # équipes sans indice (ex. M16, M17 — colonne "indice" vide) ne se dédoublonnaient
+    # jamais d'un run à l'autre, accumulant des lignes en double à chaque scraping.
+    prev_keys = prev[key_cols].fillna("")
+    new_keys = set(tuple(x) for x in new[key_cols].fillna("").itertuples(index=False, name=None))
+    keep_mask = ~prev_keys.apply(lambda r: tuple(r) in new_keys, axis=1)
     return pd.concat([prev[keep_mask], new], ignore_index=True)
 
 def run_club_scrape_ci(mapping_dir: str, outdir: str, teams_filter: str):
