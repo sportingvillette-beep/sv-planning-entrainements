@@ -62,6 +62,10 @@
     flex: 1; min-width: 220px; padding: 10px 12px; border-radius: 7px;
     border: 1px solid var(--panel-border); background: #12141a; color: var(--text); font-size: 14px;
   }
+  .inline-result {
+    background: #fff; color: #111; border-radius: 8px; padding: 16px; margin-top: 14px;
+    overflow-x: auto; display: none;
+  }
 
   @media print {
     body * { visibility: hidden; }
@@ -113,6 +117,11 @@
     <button onclick="generateFFHBPlanning()">📅 Planning du week-end à venir</button>
     <button onclick="generateFFHBResultats()">🏆 Résultats du dernier week-end</button>
   </div>
+  <div class="subtitle" style="margin:14px 0 8px;">Ou choisis un week-end en particulier (tous les matchs du club, joués ou à venir) :</div>
+  <div class="btn-row">
+    <select id="weekend-select" class="token-input" style="flex:1; min-width:220px;"><option>Chargement...</option></select>
+    <button onclick="generateFFHBWeekend()">📆 Afficher ce week-end</button>
+  </div>
   <div id="last-update-info" class="status"></div>
 </div>
 
@@ -124,6 +133,7 @@
     <button onclick="generateEquipeSituation()">📖 Afficher</button>
   </div>
   <div id="status-equipe" class="status"></div>
+  <div id="equipe-situation-content" class="inline-result"></div>
 </div>
 
 <div class="panel">
@@ -861,7 +871,7 @@ function equipeLabel(row) {
   return [row['categorie'], row['indice'], row['section']].filter(Boolean).join(' ');
 }
 
-function renderFFHBTable(rows, withScore) {
+function renderFFHBTable(rows) {
   if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Aucun match trouvé sur cette période.</p>';
   const trs = rows.map(r => {
     const d = parseFrenchDate(r['date/heure']);
@@ -871,11 +881,10 @@ function renderFFHBTable(rows, withScore) {
     if (d && confirmee && heureMatch) dateLabel += ' à ' + heureMatch[0];
     else if (d && !confirmee) dateLabel += ' (date à confirmer)';
     const lieu = r['gymnase'] ? `${r['gymnase']}${r['ville'] ? ' — ' + r['ville'] : ''}` : '';
-    const lastCol = withScore ? `<td><b>${r['score'] || ''}</b></td>` : `<td>${lieu}</td>`;
+    const score = String(r['score'] || '').trim() ? `<b>${r['score']}</b>` : '<span style="color:#999;">à venir</span>';
     const classement = r['_classement'] ? r['_classement'] : '<span style="color:#999;">—</span>';
-    return `<tr><td>${equipeLabel(r)}</td><td>${classement}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td>${lastCol}</tr>`;
+    return `<tr><td>${equipeLabel(r)}</td><td>${classement}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td><td>${score}</td><td>${lieu}</td></tr>`;
   }).join('\n');
-  const lastHeader = withScore ? '<th>Score</th>' : '<th>Lieu</th>';
   return `<div class="ffhb-wrapper">
 <style>
 .ffhb-wrapper { font-family: Arial, Helvetica, sans-serif; }
@@ -884,7 +893,7 @@ function renderFFHBTable(rows, withScore) {
 .ffhb-table thead th { background: #1a1a1a; color: #fff; }
 .ffhb-table tbody tr:nth-child(even) { background: #f7f7f7; }
 </style>
-<table class="ffhb-table"><thead><tr><th>Équipe</th><th>Classement</th><th>Date</th><th>Match</th>${lastHeader}</tr></thead><tbody>${trs}</tbody></table>
+<table class="ffhb-table"><thead><tr><th>Équipe</th><th>Classement</th><th>Date</th><th>Match</th><th>Score</th><th>Lieu</th></tr></thead><tbody>${trs}</tbody></table>
 </div>`;
 }
 
@@ -926,6 +935,83 @@ function lastWeekendRange(now) {
   const saturday = new Date(sunday); saturday.setDate(saturday.getDate() - 1); saturday.setHours(0, 0, 0, 0);
   return [saturday, sunday];
 }
+// Samedi de la semaine contenant `d` (utilisé comme clé de regroupement par week-end).
+function saturdayOf(d) {
+  const day = d.getDay();
+  const diff = day === 6 ? 0 : (day + 1); // nb de jours à retrancher pour retomber sur le samedi précédent (dimanche compris)
+  const sat = new Date(d); sat.setHours(0, 0, 0, 0); sat.setDate(sat.getDate() - diff);
+  return sat;
+}
+function weekendRangeFromSaturday(saturday) {
+  const start = new Date(saturday); start.setHours(0, 0, 0, 0);
+  const end = new Date(start); end.setDate(end.getDate() + 1); end.setHours(23, 59, 59, 999);
+  return [start, end];
+}
+function fmtWeekendLabel(saturday) {
+  const sunday = new Date(saturday); sunday.setDate(sunday.getDate() + 1);
+  const sameMonth = saturday.getMonth() === sunday.getMonth();
+  const optsDay = { day: '2-digit' };
+  const optsFull = { day: '2-digit', month: 'long', year: 'numeric' };
+  const satLabel = saturday.toLocaleDateString('fr-FR', sameMonth ? optsDay : optsFull);
+  const sunLabel = sunday.toLocaleDateString('fr-FR', optsFull);
+  return `${satLabel} - ${sunLabel}`;
+}
+
+async function loadAvailableWeekends() {
+  const rows = await loadCalendrierClub();
+  const saturdays = new Map(); // clé ISO -> Date
+  rows.forEach(r => {
+    const d = parseFrenchDate(r['date/heure']);
+    if (!d) return;
+    const sat = saturdayOf(d);
+    saturdays.set(sat.toISOString(), sat);
+  });
+  return Array.from(saturdays.values()).sort((a, b) => a - b);
+}
+
+async function loadWeekendSelect() {
+  const sel = document.getElementById('weekend-select');
+  try {
+    const saturdays = await loadAvailableWeekends();
+    if (!saturdays.length) { sel.innerHTML = '<option>Aucun match trouvé</option>'; return; }
+    const now = new Date();
+    const [nextStart] = nextWeekendRange(now);
+    sel.innerHTML = saturdays.map(sat => {
+      const selected = sat.toDateString() === nextStart.toDateString() ? ' selected' : '';
+      return `<option value="${sat.toISOString()}"${selected}>${fmtWeekendLabel(sat)}</option>`;
+    }).join('');
+  } catch (err) {
+    sel.innerHTML = '<option>Erreur de chargement</option>';
+  }
+}
+
+async function generateFFHBWeekend() {
+  const sel = document.getElementById('weekend-select');
+  if (!sel.value) { setStatus('Choisis un week-end dans la liste.', 'error'); return; }
+  const saturday = new Date(sel.value);
+  setStatus('⏳ Chargement du calendrier FFHB...');
+  document.getElementById('result-panel').style.display = 'none';
+  try {
+    const rows = await loadCalendrierClub();
+    const [start, end] = weekendRangeFromSaturday(saturday);
+    const matches = rows
+      .map(r => ({ r, d: parseFrenchDate(r['date/heure']) }))
+      .filter(({ d }) => d && d >= start && d <= end)
+      .sort((a, b) => a.d - b.d)
+      .map(({ r }) => r);
+    const matchesWithClassement = await attachClassementLabels(matches);
+
+    const html = renderFFHBTable(matchesWithClassement);
+    currentHTML = html; currentName = 'weekend_ffhb.html';
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-name').textContent = currentName + ` (${matches.length} match(s))`;
+    document.getElementById('result-panel').style.display = 'block';
+    setStatus(`✅ ${matches.length} match(s) trouvé(s) pour le week-end du ${fmtWeekendLabel(saturday)}.`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setStatus('❌ Erreur : ' + err.message, 'error');
+  }
+}
 
 async function generateFFHBPlanning() {
   setStatus('⏳ Chargement du calendrier FFHB...');
@@ -941,7 +1027,7 @@ async function generateFFHBPlanning() {
       .map(({ r }) => r);
     const upcomingWithClassement = await attachClassementLabels(upcoming);
 
-    const html = renderFFHBTable(upcomingWithClassement, false);
+    const html = renderFFHBTable(upcomingWithClassement);
     currentHTML = html; currentName = 'planning_weekend_ffhb.html';
     document.getElementById('result-content').innerHTML = html;
     document.getElementById('result-name').textContent = currentName + ` (${upcoming.length} match(s))`;
@@ -967,7 +1053,7 @@ async function generateFFHBResultats() {
       .map(({ r }) => r);
     const pastWithClassement = await attachClassementLabels(past);
 
-    const html = renderFFHBTable(pastWithClassement, true);
+    const html = renderFFHBTable(pastWithClassement);
     currentHTML = html; currentName = 'resultats_weekend_ffhb.html';
     document.getElementById('result-content').innerHTML = html;
     document.getElementById('result-name').textContent = currentName + ` (${past.length} match(s))`;
@@ -1032,9 +1118,10 @@ async function generateEquipeSituation() {
   const id = sel.value;
   const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : id;
   const statusEl = document.getElementById('status-equipe');
+  const contentEl = document.getElementById('equipe-situation-content');
   statusEl.className = 'status';
   statusEl.textContent = '⏳ Chargement de la situation de ' + label + '...';
-  document.getElementById('result-panel').style.display = 'none';
+  contentEl.style.display = 'none';
   try {
     const mappingRows = await loadTeamMappingRows();
     const ref = mappingRows.find(r => r['id'] === id);
@@ -1061,10 +1148,8 @@ ${renderClassementTable(clRows, ref['equipe_ffhb_proposee'])}
 ${renderCalendrierCompletTable(calRows)}
 </div>`;
 
-    currentHTML = html; currentName = 'situation_' + slugify(label) + '.html';
-    document.getElementById('result-content').innerHTML = html;
-    document.getElementById('result-name').textContent = currentName;
-    document.getElementById('result-panel').style.display = 'block';
+    contentEl.innerHTML = html;
+    contentEl.style.display = 'block';
     statusEl.textContent = `✅ ${calRows.length} match(s), classement de ${clRows.length} équipe(s).`;
     statusEl.className = 'status ok';
   } catch (err) {
@@ -1162,6 +1247,7 @@ window.addEventListener('DOMContentLoaded', () => {
   refreshTokenUI();
   loadTeamCheckboxes();
   loadTeamSelect();
+  loadWeekendSelect();
   loadLastUpdate();
 });
 </script>
