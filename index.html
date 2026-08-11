@@ -122,6 +122,8 @@
     <select id="weekend-select" class="token-input" style="flex:1; min-width:220px;"><option>Chargement...</option></select>
     <button onclick="generateFFHBWeekend()">📆 Afficher ce week-end</button>
   </div>
+  <div id="status-ffhb" class="status"></div>
+  <div id="ffhb-calendrier-content" class="inline-result"></div>
   <div id="last-update-info" class="status"></div>
 </div>
 
@@ -989,8 +991,9 @@ async function generateFFHBWeekend() {
   const sel = document.getElementById('weekend-select');
   if (!sel.value) { setStatus('Choisis un week-end dans la liste.', 'error'); return; }
   const saturday = new Date(sel.value);
-  setStatus('⏳ Chargement du calendrier FFHB...');
-  document.getElementById('result-panel').style.display = 'none';
+  const contentEl = document.getElementById('ffhb-calendrier-content');
+  setStatusFFHB('⏳ Chargement du calendrier FFHB...');
+  contentEl.style.display = 'none';
   try {
     const rows = await loadCalendrierClub();
     const [start, end] = weekendRangeFromSaturday(saturday);
@@ -1001,21 +1004,25 @@ async function generateFFHBWeekend() {
       .map(({ r }) => r);
     const matchesWithClassement = await attachClassementLabels(matches);
 
-    const html = renderFFHBTable(matchesWithClassement);
-    currentHTML = html; currentName = 'weekend_ffhb.html';
-    document.getElementById('result-content').innerHTML = html;
-    document.getElementById('result-name').textContent = currentName + ` (${matches.length} match(s))`;
-    document.getElementById('result-panel').style.display = 'block';
-    setStatus(`✅ ${matches.length} match(s) trouvé(s) pour le week-end du ${fmtWeekendLabel(saturday)}.`, 'ok');
+    contentEl.innerHTML = renderFFHBTable(matchesWithClassement);
+    contentEl.style.display = 'block';
+    setStatusFFHB(`✅ ${matches.length} match(s) trouvé(s) pour le week-end du ${fmtWeekendLabel(saturday)}.`, 'ok');
   } catch (err) {
     console.error(err);
-    setStatus('❌ Erreur : ' + err.message, 'error');
+    setStatusFFHB('❌ Erreur : ' + err.message, 'error');
   }
 }
 
+function setStatusFFHB(msg, cls) {
+  const el = document.getElementById('status-ffhb');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
 async function generateFFHBPlanning() {
-  setStatus('⏳ Chargement du calendrier FFHB...');
-  document.getElementById('result-panel').style.display = 'none';
+  const contentEl = document.getElementById('ffhb-calendrier-content');
+  setStatusFFHB('⏳ Chargement du calendrier FFHB...');
+  contentEl.style.display = 'none';
   try {
     const rows = await loadCalendrierClub();
     const [start, end] = nextWeekendRange(new Date());
@@ -1027,21 +1034,19 @@ async function generateFFHBPlanning() {
       .map(({ r }) => r);
     const upcomingWithClassement = await attachClassementLabels(upcoming);
 
-    const html = renderFFHBTable(upcomingWithClassement);
-    currentHTML = html; currentName = 'planning_weekend_ffhb.html';
-    document.getElementById('result-content').innerHTML = html;
-    document.getElementById('result-name').textContent = currentName + ` (${upcoming.length} match(s))`;
-    document.getElementById('result-panel').style.display = 'block';
-    setStatus(`✅ ${upcoming.length} match(s) trouvé(s) pour le week-end du ${fmtDateFr(start)}.`, 'ok');
+    contentEl.innerHTML = renderFFHBTable(upcomingWithClassement);
+    contentEl.style.display = 'block';
+    setStatusFFHB(`✅ ${upcoming.length} match(s) trouvé(s) pour le week-end du ${fmtDateFr(start)}.`, 'ok');
   } catch (err) {
     console.error(err);
-    setStatus('❌ Erreur : ' + err.message, 'error');
+    setStatusFFHB('❌ Erreur : ' + err.message, 'error');
   }
 }
 
 async function generateFFHBResultats() {
-  setStatus('⏳ Chargement des résultats FFHB...');
-  document.getElementById('result-panel').style.display = 'none';
+  const contentEl = document.getElementById('ffhb-calendrier-content');
+  setStatusFFHB('⏳ Chargement des résultats FFHB...');
+  contentEl.style.display = 'none';
   try {
     const rows = await loadCalendrierClub();
     const [start, end] = lastWeekendRange(new Date());
@@ -1053,15 +1058,12 @@ async function generateFFHBResultats() {
       .map(({ r }) => r);
     const pastWithClassement = await attachClassementLabels(past);
 
-    const html = renderFFHBTable(pastWithClassement);
-    currentHTML = html; currentName = 'resultats_weekend_ffhb.html';
-    document.getElementById('result-content').innerHTML = html;
-    document.getElementById('result-name').textContent = currentName + ` (${past.length} match(s))`;
-    document.getElementById('result-panel').style.display = 'block';
-    setStatus(`✅ ${past.length} résultat(s) trouvé(s) pour le week-end du ${fmtDateFr(start)}.`, 'ok');
+    contentEl.innerHTML = renderFFHBTable(pastWithClassement);
+    contentEl.style.display = 'block';
+    setStatusFFHB(`✅ ${past.length} résultat(s) trouvé(s) pour le week-end du ${fmtDateFr(start)}.`, 'ok');
   } catch (err) {
     console.error(err);
-    setStatus('❌ Erreur : ' + err.message, 'error');
+    setStatusFFHB('❌ Erreur : ' + err.message, 'error');
   }
 }
 
