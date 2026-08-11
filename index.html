@@ -872,7 +872,8 @@ function renderFFHBTable(rows, withScore) {
     else if (d && !confirmee) dateLabel += ' (date à confirmer)';
     const lieu = r['gymnase'] ? `${r['gymnase']}${r['ville'] ? ' — ' + r['ville'] : ''}` : '';
     const lastCol = withScore ? `<td><b>${r['score'] || ''}</b></td>` : `<td>${lieu}</td>`;
-    return `<tr><td>${equipeLabel(r)}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td>${lastCol}</tr>`;
+    const classement = r['_classement'] ? r['_classement'] : '<span style="color:#999;">—</span>';
+    return `<tr><td>${equipeLabel(r)}</td><td>${classement}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td>${lastCol}</tr>`;
   }).join('\n');
   const lastHeader = withScore ? '<th>Score</th>' : '<th>Lieu</th>';
   return `<div class="ffhb-wrapper">
@@ -883,13 +884,31 @@ function renderFFHBTable(rows, withScore) {
 .ffhb-table thead th { background: #1a1a1a; color: #fff; }
 .ffhb-table tbody tr:nth-child(even) { background: #f7f7f7; }
 </style>
-<table class="ffhb-table"><thead><tr><th>Équipe</th><th>Date</th><th>Match</th>${lastHeader}</tr></thead><tbody>${trs}</tbody></table>
+<table class="ffhb-table"><thead><tr><th>Équipe</th><th>Classement</th><th>Date</th><th>Match</th>${lastHeader}</tr></thead><tbody>${trs}</tbody></table>
 </div>`;
 }
 
 async function loadCalendrierClub() {
   const csvText = await fetchText(CALENDRIER_CLUB_URL);
   return parseCSV(csvText);
+}
+
+// Ajoute r._classement = "3e/6" (position dans la poule / nombre d'équipes) à chaque ligne,
+// en rapprochant via team_mapping.csv (même clé section/indice/categorie/phase) puis en
+// cherchant l'équipe du club dans classements_club.csv filtré sur cette même poule.
+async function attachClassementLabels(rows) {
+  if (!rows.length) return rows;
+  const [mappingRows, clText] = await Promise.all([loadTeamMappingRows(), fetchText(CLASSEMENTS_CLUB_URL)]);
+  const clRows = parseCSV(clText);
+  return rows.map(r => {
+    const ref = mappingRows.find(m => keyMatch(r, m));
+    if (!ref) return r;
+    const poule = clRows
+      .filter(c => keyMatch(c, r))
+      .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
+    const idx = poule.findIndex(c => (c['Club'] || '').toUpperCase().includes((ref['equipe_ffhb_proposee'] || '').toUpperCase()));
+    return { ...r, _classement: idx !== -1 ? `${poule[idx]['Pos.']}e/${poule.length}` : '' };
+  });
 }
 
 // "Week-end à venir" = du prochain samedi 00:00 au dimanche 23:59 (aujourd'hui inclus si on est déjà sam/dim).
@@ -920,8 +939,9 @@ async function generateFFHBPlanning() {
       .filter(({ d }) => d && d >= start && d <= end)
       .sort((a, b) => a.d - b.d)
       .map(({ r }) => r);
+    const upcomingWithClassement = await attachClassementLabels(upcoming);
 
-    const html = renderFFHBTable(upcoming, false);
+    const html = renderFFHBTable(upcomingWithClassement, false);
     currentHTML = html; currentName = 'planning_weekend_ffhb.html';
     document.getElementById('result-content').innerHTML = html;
     document.getElementById('result-name').textContent = currentName + ` (${upcoming.length} match(s))`;
@@ -945,8 +965,9 @@ async function generateFFHBResultats() {
       .filter(({ d }) => d && d >= start && d <= end)
       .sort((a, b) => a.d - b.d)
       .map(({ r }) => r);
+    const pastWithClassement = await attachClassementLabels(past);
 
-    const html = renderFFHBTable(past, true);
+    const html = renderFFHBTable(pastWithClassement, true);
     currentHTML = html; currentName = 'resultats_weekend_ffhb.html';
     document.getElementById('result-content').innerHTML = html;
     document.getElementById('result-name').textContent = currentName + ` (${past.length} match(s))`;
