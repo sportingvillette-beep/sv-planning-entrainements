@@ -36,9 +36,9 @@
  */
 
 const SHEET_NAME = 'Matchs';
-const SHARED_SECRET = 'CHANGE_MOI'; // remplacer avant déploiement — scraper uniquement
-const FORM_SHARED_SECRET = 'CHANGE_MOI_AUSSI'; // remplacer avant déploiement — formulaires publics uniquement
-const PHOTOS_FOLDER_ID = 'CHANGE_MOI_FOLDER_ID'; // ID du dossier Drive "Photos matchs"
+const SHARED_SECRET = '7x!K9#vP2$mQ8%rL4*'; // remplacer avant déploiement — scraper uniquement
+const FORM_SHARED_SECRET = 'wpFt6IaS4QDZCodB'; // remplacer avant déploiement — formulaires publics uniquement
+const PHOTOS_FOLDER_ID = '1gwZToQYNPgDnDusnAAQtuHbff5fzPjTK'; // ID du dossier Drive "Photos matchs"
 const PROGRESS_CACHE_KEY = 'scrape_progress';
 const PROGRESS_CACHE_TTL = 21600; // 6h (max autorisé par CacheService)
 
@@ -71,6 +71,7 @@ function doPost(e) {
       }
       if (p.action === 'add_score') return jsonResponse(updateScore(p));
       if (p.action === 'add_photo') return jsonResponse(addPhoto(p));
+      if (p.action === 'debug_echo') return jsonResponse(debugEcho(e));
       return jsonResponse({ ok: false, error: 'action inconnue: ' + p.action });
     }
 
@@ -226,6 +227,30 @@ function addPhoto(p) {
   current[colIndex('PhotoEq')] = url;
   rowRange.setValues([current]);
   return { ok: true, action: 'photo_added', url: url, row: rowNumber };
+}
+
+// TEMPORAIRE — diagnostic pour comprendre la forme de e.parameter.photo sur une requête
+// multipart réelle (hors HtmlService). À retirer avant merge.
+function debugEcho(e) {
+  const p = e.parameter || {};
+  const info = {};
+  Object.keys(p).forEach(k => {
+    const v = p[k];
+    info[k] = {
+      jsType: typeof v,
+      isBlob: !!(v && typeof v.getBytes === 'function'),
+      ctor: v && v.constructor ? v.constructor.name : null,
+      preview: (typeof v === 'string') ? v.slice(0, 60) : String(v).slice(0, 60),
+    };
+  });
+  return {
+    ok: true,
+    parameterKeys: Object.keys(p),
+    parametersKeys: e.parameters ? Object.keys(e.parameters) : null,
+    hasPostData: !!e.postData,
+    postDataType: e.postData ? e.postData.type : null,
+    fields: info,
+  };
 }
 
 function getOrCreateSubfolder(parent, name) {
