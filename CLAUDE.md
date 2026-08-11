@@ -330,3 +330,75 @@ plus large (bascule vers Supabase, dashboard, PWA) resté au stade de la
 session 1/6. Objectif à terme évoqué avec Julien : remplacer aussi ces
 scénarios Make par le même Web App Apps Script (pas fait dans cette
 itération — seule l'écriture des matchs scrapés est en place).
+
+### Logique exacte des scénarios Make.com à remplacer (reverse-engineered)
+
+Julien a exporté les 2 blueprints Make (JSON) pour ces deux formulaires — voici
+ce qu'ils font vraiment, pour implémenter la suite fidèlement dans le même
+Web App Apps Script (`apps-script/Code.gs`) plutôt que de deviner :
+
+**Scénario "Formulaire nouveau score"** (webhook hook `2994327`, appelé par
+`form-score-club-2-` à la soumission du score) :
+- Reçoit `match_id, etat_match, score_dom, score_ext, temps_jeu, statut,
+  WinLose, equipe1_label, equipe2_label`.
+- Cherche la ligne `Code Gesthand == match_id` dans la sheet `Matchs`.
+- Route "sans photo" (le cas normal) : écrit `Eq1Score`/`Eq2Score`/`WinLose`.
+- Route "avec `photo_finale`" : upload la photo sur Dropbox
+  (`/Photos résultats`), crée un lien public, écrit ce lien dans **`Story
+  résultat`** (pas `PhotoEq`) — et **n'écrit pas le score** dans ce cas.
+  Confirmé avec Julien : cette route est très probablement du **code mort**
+  d'une ancienne version du formulaire — le flux actuel envoie le score
+  d'abord, puis (séparément, une fois le score final publié) un lien "ajout
+  photo" s'ouvre pour la photo. Ne pas reproduire ce comportement "photo
+  écrase le score" en le remplaçant.
+
+**Scénario "Formulaire nouvelle photo"** (webhook hook `3196485`, partagé par
+l'étape 2 de `form-score-club-2-` ET la totalité de
+`form-score-club-photo-only`) :
+- Reçoit `match_id, code_gesthand, equipe1_label, equipe2_label, meta,
+  source, photo` (peut contenir plusieurs fichiers).
+- Cherche/crée un dossier Dropbox `/Photos matchs/{match_id}`, y upload la
+  photo (pas d'overwrite — plusieurs photos peuvent s'accumuler).
+- **N'écrit rien dans la sheet** — la colonne `PhotoEq` (vue remplie d'un
+  lien Dropbox dans un export CSV) n'est donc pas alimentée par ce
+  scénario ; mécanisme de remplissage réel non identifié (manuel ?
+  scénario Make non exporté ?) — à clarifier avec Julien si on migre cette
+  partie.
+- Julien pense n'envoyer qu'une seule photo "résultat" par match, mais rien
+  ne l'empêche techniquement d'en envoyer plusieurs.
+
+### Roadmap discutée avec Julien (pas construite, dans cet ordre probable)
+
+1. **Migrer score/photo vers le Web App Apps Script** (remplace Make +
+   Dropbox) — probablement basculer vers Google Drive pour le stockage des
+   photos (accès natif Apps Script, pas de token OAuth Dropbox à gérer),
+   en conservant fidèlement la logique ci-dessus (sans la route morte
+   "photo écrase le score").
+2. **Génération semi-auto d'image de résultat** (score + photo + logos
+   sponsors) via l'**API Canva Pro** (compte associatif de Julien, déjà
+   choisi plutôt qu'un template HTML/Playwright maison — meilleur rendu
+   visuel, Julien accepte la dépendance externe). Publication sur
+   Instagram : **volontairement manuelle** (Julien ouvre l'image générée
+   sur son téléphone et poste lui-même) — pas d'automatisation Meta Graph
+   API prévue, jugée trop lourde pour le gain.
+3. **Sponsors** : bandeau/pied de page réutilisable sur les futures vues.
+   Pas encore de source de données identifiée pour la liste de sponsors —
+   à demander à Julien avant de construire.
+4. **Dashboard live pour les licenciés** (lecture simple de `data/*.csv`,
+   pas de nouvelle donnée à collecter).
+5. **Écran TV au gymnase** — variante plein écran/auto-refresh du
+   dashboard ci-dessus.
+6. **Journal "L'Équipe" du week-end** — bilan des matchs joués/gagnés/perdus
+   + quelques photos + commentaires coach/public (nécessite d'étendre le
+   formulaire score avec un champ commentaire optionnel). Réutiliser soit
+   le pattern Team Book existant (HTML + `window.print()`), soit Canva Bulk
+   Create si le rendu visuel prime.
+7. **Outil d'aide à la planification** — un vrai projet à part, décrit en
+   détail par Julien : (a) déterminer quels matchs sont à domicile pour le
+   club, sachant que pour une entente il faut d'abord s'accorder entre
+   clubs membres sur qui reçoit ; (b) construire un planning de week-end en
+   croisant avec les disponibilités des gymnases (sheet dédié existant,
+   colonnes `E1..E4.Lieu/Jour/Debut/Fin` du sheet équipes) ; (c) suggérer
+   des horaires (échauffement + durée de match connus) avant validation
+   définitive dans Gesthand → remontée sur ffhandball.fr → captée par notre
+   scraper. Explicitement mis de côté par Julien pour plus tard.
