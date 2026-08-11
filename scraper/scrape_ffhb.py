@@ -167,8 +167,10 @@ def resolve_poule_base_url(page, base_url: str) -> str:
     print(f"  URL de poule résolue -> {resolved}")
     return resolved
 
-def scrape_poule_journees(page, base_url: str):
-    """Parcourt toutes les journées d'une poule. Retourne (calendrier_df, classement_df, num_journees)."""
+def scrape_poule_journees(page, base_url: str, on_journee=None):
+    """Parcourt toutes les journées d'une poule. Retourne (calendrier_df, classement_df, num_journees).
+    on_journee(j, num_journees), si fourni, est appelé avant chaque journée (j=0 dès que
+    num_journees est connu) — utilisé pour remonter une progression."""
     base_url = resolve_poule_base_url(page, base_url)
     page.goto(base_url, wait_until="domcontentloaded", timeout=90000)
     try:
@@ -177,10 +179,14 @@ def scrape_poule_journees(page, base_url: str):
         pass
     num_journees = get_num_journees(page)
     print(f"{num_journees} journée(s) détectée(s).")
+    if on_journee:
+        on_journee(0, num_journees)
 
     all_rows = []
     classement = None
     for j in range(1, num_journees + 1):
+        if on_journee:
+            on_journee(j, num_journees)
         j_url = f"{base_url}journee-{j}/"
         print(f"  Journée {j}/{num_journees}...")
         page.goto(j_url, wait_until="domcontentloaded", timeout=90000)

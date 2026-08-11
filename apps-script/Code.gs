@@ -23,6 +23,8 @@
 
 const SHEET_NAME = 'Matchs';
 const SHARED_SECRET = 'CHANGE_MOI'; // remplacer avant déploiement
+const PROGRESS_CACHE_KEY = 'scrape_progress';
+const PROGRESS_CACHE_TTL = 21600; // 6h (max autorisé par CacheService)
 
 // Ordre exact des colonnes du Sheet (A -> AD). Ne pas réordonner sans adapter le Sheet.
 const COLUMNS = [
@@ -45,10 +47,26 @@ function doPost(e) {
     if (body.action === 'add_match') {
       return jsonResponse(upsertMatch(body.match));
     }
+    if (body.action === 'progress') {
+      // Suivi d'avancement d'un run de scraping — stockage éphémère (CacheService,
+      // pas le Sheet), lu par le site via doGet pour afficher une barre de progression.
+      CacheService.getScriptCache().put(PROGRESS_CACHE_KEY, JSON.stringify(body.progress), PROGRESS_CACHE_TTL);
+      return jsonResponse({ ok: true });
+    }
     return jsonResponse({ ok: false, error: 'action inconnue: ' + body.action });
   } catch (err) {
     return jsonResponse({ ok: false, error: String(err) });
   }
+}
+
+// Lecture de la progression (pas d'authentification requise — donnée non sensible,
+// juste des noms d'équipes déjà publics et un numéro de journée).
+function doGet(e) {
+  if (e.parameter.action === 'progress') {
+    const raw = CacheService.getScriptCache().get(PROGRESS_CACHE_KEY);
+    return jsonResponse(raw ? JSON.parse(raw) : null);
+  }
+  return jsonResponse({ ok: false, error: 'action inconnue' });
 }
 
 function getSheet() {

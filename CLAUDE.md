@@ -241,6 +241,22 @@ l'API GitHub répond bien en CORS à un `fetch()` cross-origin authentifié par
 `Authorization: Bearer <token>` (testé avec un faux jeton → 401 propre, pas
 d'erreur CORS bloquante).
 
+### Barre de progression du rafraîchissement (équipe par équipe)
+
+L'API GitHub Actions ne donne pas de vrai pourcentage, et streamer les logs
+d'un job en cours n'est pas fiable. On utilise donc le Web App Apps Script
+comme relais : `scrape_ffhb_club.py` (`post_progress`, appelée via le
+callback `on_journee` de `scrape_poule_journees`) pousse à chaque étape
+(équipe démarrée, journée en cours, run terminé) un petit JSON dans
+`CacheService` (action `progress` de `Code.gs` — pas le Sheet, purement
+éphémère, 6h de TTL). Le site sonde ça via `doGet(?action=progress)` toutes
+les 3s (`PROGRESS_WEBAPP_URL`, hardcodée dans `index.html` — l'URL n'est pas
+sensible en elle-même, seules les actions d'écriture sont protégées par le
+secret partagé). Un `started_at` (posé une fois par run) est comparé côté
+client au moment du déclenchement pour ignorer une progression laissée par
+un run précédent (sinon un `done:true` périmé stopperait le sondage
+immédiatement). Filet de sécurité : arrêt du sondage après 15 min.
+
 ## Synchronisation vers la sheet "Matchs" (remplace le copier-coller manuel)
 
 Historique : Julien copiait manuellement le résultat d'un ancêtre du scraper

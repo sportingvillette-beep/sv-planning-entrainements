@@ -357,7 +357,37 @@ def sync_matches_to_sheet(team_calendrier, t) -> int:
             n_ok += 1
     return n_ok
 
-def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict):
+_RUN_STARTED_AT = None
+
+def post_progress(team_index=0, team_total=0, team_label="", journee=None, journee_total=None, done=False, error=None):
+    """Remonte une progression au Web App (best-effort — ne doit jamais faire échouer
+    le scraping). Sans effet si SHEET_WEBAPP_URL/SECRET absentes ou hors d'un run CI."""
+    url = os.environ.get("SHEET_WEBAPP_URL", "").strip()
+    secret = os.environ.get("SHEET_WEBAPP_SECRET", "").strip()
+    if not url or not secret or not _RUN_STARTED_AT:
+        return
+    payload = {
+        "secret": secret,
+        "action": "progress",
+        "progress": {
+            "started_at": _RUN_STARTED_AT,
+            "team_index": team_index,
+            "team_total": team_total,
+            "team_label": team_label,
+            "journee": journee,
+            "journee_total": journee_total,
+            "done": done,
+            "error": error,
+        },
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=15)
+    except Exception:
+        pass
+
+def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict, on_journee=None):
     """Scrape la poule d'une ligne de mapping (avec cache par poule) et retourne
     (lignes_calendrier_ou_None, ligne_classement_ou_None) pour cette équipe."""
     base_url = t["poule_url"]
@@ -365,7 +395,7 @@ def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict):
     print(f"\n=== {label} -> {t['equipe_ffhb_proposee']} ===\n{base_url}")
 
     if base_url not in poule_cache:
-        calendrier, classement, _ = scrape_poule_journees(page, base_url)
+        calendrier, classement, _ = scrape_poule_journees(page, base_url, on_journee=on_journee)
         poule_cache[base_url] = (calendrier, classement)
     calendrier, classement = poule_cache[base_url]
 
@@ -480,12 +510,23 @@ def run_club_scrape_ci(mapping_dir: str, outdir: str, teams_filter: str):
     refreshed_ids = []
     erreurs = []
 
+    global _RUN_STARTED_AT
+    _RUN_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    team_total = len(mapping)
+    post_progress(0, team_total, "", done=False)
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        for _, t in mapping.iterrows():
+        for team_index, (_, t) in enumerate(mapping.iterrows(), start=1):
+            label = " ".join(str(x) for x in [t["section"], t["indice"], t["categorie"]] if str(x) and str(x) != "nan")
+
+            def on_journee(j, num_journees, _idx=team_index, _label=label):
+                post_progress(_idx, team_total, _label, journee=j, journee_total=num_journees)
+
+            post_progress(team_index, team_total, label)
             try:
-                cal, cls = scrape_one_mapping_row(page, poule_cache, salle_cache, t)
+                cal, cls = scrape_one_mapping_row(page, poule_cache, salle_cache, t, on_journee=on_journee)
                 if cal is not None:
                     calendrier_rows.append(cal)
                 if cls is not None:
@@ -515,6 +556,7 @@ def run_club_scrape_ci(mapping_dir: str, outdir: str, teams_filter: str):
     with open(os.path.join(outdir, "last_update.json"), "w", encoding="utf-8") as f:
         json.dump(status, f, ensure_ascii=False, indent=2)
     print(f"\n✔ last_update.json -> {len(refreshed_ids)} équipe(s) rafraîchie(s), {len(erreurs)} erreur(s).")
+    post_progress(team_total, team_total, "", done=True, error=(", ".join(erreurs) if erreurs else None))
     if erreurs:
         sys.exit(1)
 

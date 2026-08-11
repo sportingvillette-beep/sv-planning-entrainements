@@ -66,6 +66,11 @@
     background: #fff; color: #111; border-radius: 8px; padding: 16px; margin-top: 14px;
     overflow-x: auto; display: none;
   }
+  .progress-outer {
+    background: #12141a; border: 1px solid var(--panel-border); border-radius: 8px;
+    height: 14px; overflow: hidden;
+  }
+  .progress-inner { background: var(--accent); height: 100%; width: 2%; transition: width .4s ease; }
 
   @media print {
     body * { visibility: hidden; }
@@ -153,6 +158,10 @@
     <button onclick="triggerRefresh()">🔄 Lancer un rafraîchissement (coché = équipes ciblées, sinon toutes)</button>
   </div>
   <div id="status-refresh" class="status"></div>
+  <div id="refresh-progress" style="display:none; margin-top:12px;">
+    <div class="progress-outer"><div id="refresh-progress-bar" class="progress-inner"></div></div>
+    <div id="refresh-progress-label" class="status" style="margin-top:6px;"></div>
+  </div>
 </div>
 
 <div class="panel" id="result-panel">
@@ -830,6 +839,10 @@ const LAST_UPDATE_URL = 'data/last_update.json';
 const GH_REPO = 'sportingvillette-beep/sv-planning-entrainements';
 const GH_WORKFLOW_FILE = 'scrape-ffhb.yml';
 const GH_TOKEN_KEY = 'sv_gh_token';
+// Même Web App Apps Script que la synchro des matchs (voir apps-script/Code.gs) — l'URL
+// n'est pas sensible en elle-même (seules les actions d'écriture sont protégées par secret),
+// donc on peut la mettre en dur ici pour sonder la progression d'un run en cours.
+const PROGRESS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzA8_vH6hAwZl3aBOxEtL4sKqxi10mhY6Tw0dDRLU-SHszHHui4GXSR04GX8VV15oQC/exec';
 
 async function fetchText(url) {
   const sep = url.includes('?') ? '&' : '?';
@@ -1217,12 +1230,76 @@ async function loadTeamCheckboxes() {
   }
 }
 
+// ---------- Suivi d'avancement (équipe par équipe, journée par journée) ----------
+// Le run pousse sa progression au Web App (CacheService, pas le Sheet) ; on la sonde ici.
+let _progressTimer = null;
+let _progressStopAt = null;
+
+async function fetchProgress() {
+  const sep = PROGRESS_WEBAPP_URL.includes('?') ? '&' : '?';
+  const res = await fetch(PROGRESS_WEBAPP_URL + sep + 'action=progress&_=' + Date.now());
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+function renderProgress(p) {
+  const wrap = document.getElementById('refresh-progress');
+  const bar = document.getElementById('refresh-progress-bar');
+  const label = document.getElementById('refresh-progress-label');
+  wrap.style.display = 'block';
+
+  if (!p || !p.team_total) {
+    bar.style.width = '2%';
+    label.textContent = '⏳ Démarrage du run GitHub Actions...';
+    return;
+  }
+  // Macro : équipes déjà terminées / total. Micro : fraction de la journée en cours
+  // dans l'équipe active, pondérée par 1/team_total pour s'insérer dans la même barre.
+  const teamsDone = Math.max(0, p.team_index - 1);
+  const journeeFrac = p.journee_total ? Math.min(1, (p.journee || 0) / p.journee_total) : 0;
+  const pct = Math.min(100, Math.round(((teamsDone + journeeFrac) / p.team_total) * 100));
+  bar.style.width = Math.max(2, pct) + '%';
+
+  if (p.done) {
+    bar.style.width = '100%';
+    label.textContent = p.error
+      ? `❌ Terminé avec des erreurs sur : ${p.error}`
+      : '✅ Terminé ! Recharge la page pour voir les nouvelles données.';
+    return;
+  }
+  const jr = p.journee_total ? ` — journée ${p.journee || 0}/${p.journee_total}` : '';
+  label.textContent = `⏳ Équipe ${p.team_index}/${p.team_total}${p.team_label ? ' : ' + p.team_label : ''}${jr} (${pct}%)`;
+}
+
+function stopProgressPolling() {
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+}
+
+function startProgressPolling(dispatchedAt) {
+  stopProgressPolling();
+  renderProgress(null);
+  _progressStopAt = Date.now() + 15 * 60 * 1000; // filet de sécurité : 15 min max
+  _progressTimer = setInterval(async () => {
+    if (Date.now() > _progressStopAt) { stopProgressPolling(); return; }
+    try {
+      const p = await fetchProgress();
+      // Ignore une progression d'un run précédent (started_at antérieur à notre déclenchement).
+      if (!p || !p.started_at || p.started_at < dispatchedAt) return;
+      renderProgress(p);
+      if (p.done) stopProgressPolling();
+    } catch (err) {
+      // silencieux — on retente au prochain tick
+    }
+  }, 3000);
+}
+
 async function triggerRefresh() {
   const token = getToken();
   if (!token) { setRefreshStatus('❌ Aucun jeton enregistré — colle ton jeton GitHub ci-dessus d\'abord.', 'error'); return; }
   const checked = Array.from(document.querySelectorAll('#team-checkboxes input:checked')).map(el => el.value);
   const teams = checked.join(',');
   setRefreshStatus('⏳ Déclenchement du workflow GitHub Actions...');
+  const dispatchedAt = new Date().toISOString();
   try {
     const res = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE}/dispatches`, {
       method: 'POST',
@@ -1236,7 +1313,8 @@ async function triggerRefresh() {
     });
     if (res.status === 204) {
       const cible = teams ? checked.length + ' équipe(s) ciblée(s)' : 'toutes les équipes';
-      setRefreshStatus('✅ Rafraîchissement lancé (' + cible + '). Ça prend quelques minutes — recharge la page ensuite pour voir les nouvelles données.', 'ok');
+      setRefreshStatus('✅ Rafraîchissement lancé (' + cible + '). Suivi de l\'avancement ci-dessous.', 'ok');
+      startProgressPolling(dispatchedAt);
     } else {
       const text = await res.text();
       setRefreshStatus('❌ Erreur GitHub (' + res.status + ') : ' + text, 'error');
