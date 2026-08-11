@@ -245,17 +245,29 @@ d'erreur CORS bloquante).
 
 L'API GitHub Actions ne donne pas de vrai pourcentage, et streamer les logs
 d'un job en cours n'est pas fiable. On utilise donc le Web App Apps Script
-comme relais : `scrape_ffhb_club.py` (`post_progress`, appelée via le
-callback `on_journee` de `scrape_poule_journees`) pousse à chaque étape
-(équipe démarrée, journée en cours, run terminé) un petit JSON dans
-`CacheService` (action `progress` de `Code.gs` — pas le Sheet, purement
-éphémère, 6h de TTL). Le site sonde ça via `doGet(?action=progress)` toutes
-les 3s (`PROGRESS_WEBAPP_URL`, hardcodée dans `index.html` — l'URL n'est pas
-sensible en elle-même, seules les actions d'écriture sont protégées par le
-secret partagé). Un `started_at` (posé une fois par run) est comparé côté
-client au moment du déclenchement pour ignorer une progression laissée par
-un run précédent (sinon un `done:true` périmé stopperait le sondage
-immédiatement). Filet de sécurité : arrêt du sondage après 15 min.
+comme relais : `scrape_ffhb_club.py` (`post_progress`) pousse à chaque étape
+un petit JSON dans `CacheService` (action `progress` de `Code.gs` — pas le
+Sheet, purement éphémère, 6h de TTL). Le site sonde ça via
+`doGet(?action=progress)` toutes les 3s (`PROGRESS_WEBAPP_URL`, hardcodée
+dans `index.html` — l'URL n'est pas sensible en elle-même, seules les
+actions d'écriture sont protégées par le secret partagé).
+
+Chaque équipe a **2 phases séquentielles**, chacune pesant pour moitié du
+créneau de l'équipe dans la barre :
+- `phase: "journees"` (callback `on_journee` de `scrape_poule_journees`) —
+  parcours intégral des journées de la poule, toujours fait en entier
+  (impossible de savoir sans les visiter si un score est apparu).
+- `phase: "details"` (callback `on_match` de `enrich_salle`) —
+  gymnase/ville par match, qui **saute** les matchs déjà joués et connus
+  (cache). Sans cette 2e phase distincte, la barre semblerait geler sur les
+  équipes ayant beaucoup de nouveaux matchs à détailler, puisque la phase
+  "journees" seule atteint 100% de son propre décompte bien avant que
+  l'équipe entière soit terminée.
+
+Un `started_at` (posé une fois par run) est comparé côté client au moment
+du déclenchement pour ignorer une progression laissée par un run précédent
+(sinon un `done:true` périmé stopperait le sondage immédiatement). Filet de
+sécurité : arrêt du sondage après 15 min.
 
 ## Synchronisation vers la sheet "Matchs" (remplace le copier-coller manuel)
 

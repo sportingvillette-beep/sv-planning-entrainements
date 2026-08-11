@@ -213,13 +213,17 @@ def scrape_poule_journees(page, base_url: str, on_journee=None):
     calendrier = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
     return calendrier, classement, num_journees
 
-def enrich_salle(page, team_df: pd.DataFrame, salle_cache: dict) -> pd.DataFrame:
-    """Ajoute gymnase/ville/adresse_complete à team_df, en réutilisant salle_cache pour les matchs déjà joués."""
+def enrich_salle(page, team_df: pd.DataFrame, salle_cache: dict, on_match=None) -> pd.DataFrame:
+    """Ajoute gymnase/ville/adresse_complete à team_df, en réutilisant salle_cache pour les matchs déjà joués.
+    on_match(i+1, total, from_cache), si fourni, est appelé pour chaque match — utilisé pour
+    remonter une progression (le saut de cache n'apparaît donc pas comme un simple gel de la barre)."""
     gymnases, villes, adresses = [], [], []
     for i, row in team_df.iterrows():
         lien = row["lien"]
         score_connu = bool(str(row.get("score", "") or "").strip())
         cached = salle_cache.get(lien) if (score_connu and lien) else None
+        if on_match:
+            on_match(i + 1, len(team_df), bool(cached))
         if cached:
             print(f"  Match {i + 1}/{len(team_df)} déjà joué et connu ({row['domicile']} - {row['extérieur']}) -> cache")
             salle = cached

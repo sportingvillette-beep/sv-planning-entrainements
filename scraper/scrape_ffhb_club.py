@@ -359,9 +359,15 @@ def sync_matches_to_sheet(team_calendrier, t) -> int:
 
 _RUN_STARTED_AT = None
 
-def post_progress(team_index=0, team_total=0, team_label="", journee=None, journee_total=None, done=False, error=None):
+def post_progress(team_index=0, team_total=0, team_label="", phase=None,
+                   journee=None, journee_total=None, match=None, match_total=None,
+                   done=False, error=None):
     """Remonte une progression au Web App (best-effort — ne doit jamais faire échouer
-    le scraping). Sans effet si SHEET_WEBAPP_URL/SECRET absentes ou hors d'un run CI."""
+    le scraping). Sans effet si SHEET_WEBAPP_URL/SECRET absentes ou hors d'un run CI.
+    phase distingue les 2 étapes d'une équipe : "journees" (parcours des journées de
+    la poule, toujours fait en entier) et "details" (gymnase/ville par match, qui saute
+    les matchs déjà joués et connus — sans cette distinction la barre semblerait geler
+    sur ces équipes-là)."""
     url = os.environ.get("SHEET_WEBAPP_URL", "").strip()
     secret = os.environ.get("SHEET_WEBAPP_SECRET", "").strip()
     if not url or not secret or not _RUN_STARTED_AT:
@@ -374,8 +380,11 @@ def post_progress(team_index=0, team_total=0, team_label="", journee=None, journ
             "team_index": team_index,
             "team_total": team_total,
             "team_label": team_label,
+            "phase": phase,
             "journee": journee,
             "journee_total": journee_total,
+            "match": match,
+            "match_total": match_total,
             "done": done,
             "error": error,
         },
@@ -387,7 +396,7 @@ def post_progress(team_index=0, team_total=0, team_label="", journee=None, journ
     except Exception:
         pass
 
-def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict, on_journee=None):
+def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict, on_journee=None, on_match=None):
     """Scrape la poule d'une ligne de mapping (avec cache par poule) et retourne
     (lignes_calendrier_ou_None, ligne_classement_ou_None) pour cette équipe."""
     base_url = t["poule_url"]
@@ -408,7 +417,7 @@ def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict, 
         )
         team_df = calendrier[mask].reset_index(drop=True)
         if not team_df.empty:
-            team_df = enrich_salle(page, team_df, salle_cache)
+            team_df = enrich_salle(page, team_df, salle_cache, on_match=on_match)
             team_df.insert(0, "phase", t["phase"])
             team_df.insert(0, "categorie", t["categorie"])
             team_df.insert(0, "indice", t["indice"])
@@ -522,11 +531,14 @@ def run_club_scrape_ci(mapping_dir: str, outdir: str, teams_filter: str):
             label = " ".join(str(x) for x in [t["section"], t["indice"], t["categorie"]] if str(x) and str(x) != "nan")
 
             def on_journee(j, num_journees, _idx=team_index, _label=label):
-                post_progress(_idx, team_total, _label, journee=j, journee_total=num_journees)
+                post_progress(_idx, team_total, _label, phase="journees", journee=j, journee_total=num_journees)
+
+            def on_match(m, num_matches, from_cache, _idx=team_index, _label=label):
+                post_progress(_idx, team_total, _label, phase="details", match=m, match_total=num_matches)
 
             post_progress(team_index, team_total, label)
             try:
-                cal, cls = scrape_one_mapping_row(page, poule_cache, salle_cache, t, on_journee=on_journee)
+                cal, cls = scrape_one_mapping_row(page, poule_cache, salle_cache, t, on_journee=on_journee, on_match=on_match)
                 if cal is not None:
                     calendrier_rows.append(cal)
                 if cls is not None:

@@ -1253,11 +1253,18 @@ function renderProgress(p) {
     label.textContent = '⏳ Démarrage du run GitHub Actions...';
     return;
   }
-  // Macro : équipes déjà terminées / total. Micro : fraction de la journée en cours
-  // dans l'équipe active, pondérée par 1/team_total pour s'insérer dans la même barre.
+  // Macro : équipes déjà terminées / total. Micro : une équipe a 2 étapes séquentielles —
+  // "journees" (parcours intégral des journées de la poule) puis "details" (gymnase/ville
+  // par match, qui saute les matchs déjà joués/connus) — chacune pondérée pour moitié du
+  // créneau de l'équipe, sinon la barre semblerait geler pendant l'étape détails.
   const teamsDone = Math.max(0, p.team_index - 1);
-  const journeeFrac = p.journee_total ? Math.min(1, (p.journee || 0) / p.journee_total) : 0;
-  const pct = Math.min(100, Math.round(((teamsDone + journeeFrac) / p.team_total) * 100));
+  let subFrac = 0;
+  if (p.phase === 'journees' && p.journee_total) {
+    subFrac = 0.5 * Math.min(1, (p.journee || 0) / p.journee_total);
+  } else if (p.phase === 'details' && p.match_total) {
+    subFrac = 0.5 + 0.5 * Math.min(1, (p.match || 0) / p.match_total);
+  }
+  const pct = Math.min(100, Math.round(((teamsDone + subFrac) / p.team_total) * 100));
   bar.style.width = Math.max(2, pct) + '%';
 
   if (p.done) {
@@ -1267,8 +1274,10 @@ function renderProgress(p) {
       : '✅ Terminé ! Recharge la page pour voir les nouvelles données.';
     return;
   }
-  const jr = p.journee_total ? ` — journée ${p.journee || 0}/${p.journee_total}` : '';
-  label.textContent = `⏳ Équipe ${p.team_index}/${p.team_total}${p.team_label ? ' : ' + p.team_label : ''}${jr} (${pct}%)`;
+  let detail = '';
+  if (p.phase === 'journees' && p.journee_total) detail = ` — journée ${p.journee || 0}/${p.journee_total}`;
+  else if (p.phase === 'details' && p.match_total) detail = ` — détail match ${p.match || 0}/${p.match_total}`;
+  label.textContent = `⏳ Équipe ${p.team_index}/${p.team_total}${p.team_label ? ' : ' + p.team_label : ''}${detail} (${pct}%)`;
 }
 
 function stopProgressPolling() {
