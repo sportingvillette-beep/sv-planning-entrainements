@@ -71,7 +71,6 @@ function doPost(e) {
       }
       if (p.action === 'add_score') return jsonResponse(updateScore(p));
       if (p.action === 'add_photo') return jsonResponse(addPhoto(p));
-      if (p.action === 'debug_echo') return jsonResponse(debugEcho(e));
       return jsonResponse({ ok: false, error: 'action inconnue: ' + p.action });
     }
 
@@ -208,17 +207,26 @@ function updateScore(p) {
  * Dropbox sans jamais écrire dans la sheet). Ici on upload sur Drive (dossier dédié par
  * match) et on écrit le lien dans PhotoEq — un envoi ultérieur pour le même match
  * remplace le lien précédent (un seul "photo résultat" attendu par match, cf CLAUDE.md).
+ *
+ * La photo arrive en base64 (p.photo_base64 + p.photo_name + p.photo_type), pas en Blob
+ * multipart natif : testé en prod, Apps Script ne peuple PAS e.parameter avec un Blob pour
+ * un fichier envoyé via un vrai POST multipart/form-data externe (seuls les champs texte
+ * arrivent) — contrairement au comportement d'un <input type=file> dans un formulaire
+ * HtmlService classique. D'où l'encodage base64 côté client (voir les 2 repos formulaires).
  */
 function addPhoto(p) {
   if (!p.match_id) return { ok: false, error: 'match_id manquant' };
-  if (!p.photo || typeof p.photo.getBytes !== 'function') return { ok: false, error: 'photo manquante' };
+  if (!p.photo_base64) return { ok: false, error: 'photo manquante' };
   const sheet = getSheet();
   const rowNumber = findRowByCode(sheet, p.match_id);
   if (!rowNumber) return { ok: false, error: 'match introuvable: ' + p.match_id };
 
+  const bytes = Utilities.base64Decode(p.photo_base64);
+  const blob = Utilities.newBlob(bytes, p.photo_type || 'image/jpeg', p.photo_name || (p.match_id + '.jpg'));
+
   const parentFolder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
   const matchFolder = getOrCreateSubfolder(parentFolder, p.match_id);
-  const file = matchFolder.createFile(p.photo);
+  const file = matchFolder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const url = 'https://lh3.googleusercontent.com/d/' + file.getId();
 
@@ -227,30 +235,6 @@ function addPhoto(p) {
   current[colIndex('PhotoEq')] = url;
   rowRange.setValues([current]);
   return { ok: true, action: 'photo_added', url: url, row: rowNumber };
-}
-
-// TEMPORAIRE — diagnostic pour comprendre la forme de e.parameter.photo sur une requête
-// multipart réelle (hors HtmlService). À retirer avant merge.
-function debugEcho(e) {
-  const p = e.parameter || {};
-  const info = {};
-  Object.keys(p).forEach(k => {
-    const v = p[k];
-    info[k] = {
-      jsType: typeof v,
-      isBlob: !!(v && typeof v.getBytes === 'function'),
-      ctor: v && v.constructor ? v.constructor.name : null,
-      preview: (typeof v === 'string') ? v.slice(0, 60) : String(v).slice(0, 60),
-    };
-  });
-  return {
-    ok: true,
-    parameterKeys: Object.keys(p),
-    parametersKeys: e.parameters ? Object.keys(e.parameters) : null,
-    hasPostData: !!e.postData,
-    postDataType: e.postData ? e.postData.type : null,
-    fields: info,
-  };
 }
 
 function getOrCreateSubfolder(parent, name) {
