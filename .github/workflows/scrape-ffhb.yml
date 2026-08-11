@@ -43,6 +43,12 @@ jobs:
         run: python scraper/scrape_ffhb_club.py sync-mapping --mapping-dir scraper
 
       - name: Scraper calendrier/classement
+        env:
+          # Synchronise chaque match vers la sheet "Matchs" (Web App Apps Script, voir
+          # apps-script/Code.gs). No-op silencieux tant que ces secrets ne sont pas définis
+          # (Settings > Secrets and variables > Actions).
+          SHEET_WEBAPP_URL: ${{ secrets.SHEET_WEBAPP_URL }}
+          SHEET_WEBAPP_SECRET: ${{ secrets.SHEET_WEBAPP_SECRET }}
         run: |
           python scraper/scrape_ffhb_club.py scrape \
             --mapping-dir scraper \

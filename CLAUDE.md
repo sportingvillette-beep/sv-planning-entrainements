@@ -240,3 +240,65 @@ admin doit créer son propre jeton une fois par appareil (scope minimal :
 l'API GitHub répond bien en CORS à un `fetch()` cross-origin authentifié par
 `Authorization: Bearer <token>` (testé avec un faux jeton → 401 propre, pas
 d'erreur CORS bloquante).
+
+## Synchronisation vers la sheet "Matchs" (remplace le copier-coller manuel)
+
+Historique : Julien copiait manuellement le résultat d'un ancêtre du scraper
+dans le Google Sheet "Matchs" (`Com matchs réseaux`, celui que lisent
+`form-score-club*` — voir plus bas). Le scraper FFHB **écrit maintenant
+directement** dans cette sheet à chaque run (upsert par match), sans
+supprimer la possibilité d'ajouter des matchs à la main (amicaux/tournois
+absents de la FFHB) — les deux modes de saisie coexistent.
+
+### Écriture via un Web App Apps Script (pas d'API Google côté scraper)
+
+`apps-script/Code.gs` est un Web App unique lié à la sheet "Matchs" : le
+scraper (GitHub Actions) lui POST un JSON par match (`action: "add_match"`),
+protégé par un secret partagé (`SHARED_SECRET` dans le script =
+`SHEET_WEBAPP_SECRET` côté GitHub). Choix déjà fait pour remplacer
+Make.com sur les formulaires score/photo — même Web App, même point
+d'entrée unique pour toute écriture dans la sheet, à étendre plus tard.
+**Ce script doit être collé à la main dans l'éditeur Apps Script de la
+sheet et déployé par Julien** (Claude Code n'a pas d'accès à son compte
+Google) — voir les instructions en tête de `Code.gs`.
+
+Côté Python (`scrape_ffhb_club.py`) : `SHEET_WEBAPP_URL` /
+`SHEET_WEBAPP_SECRET` sont lues en variables d'environnement
+(`post_match_to_sheet`) — **no-op silencieux si absentes**, donc sûr de
+merger/tester avant que le Web App soit réellement déployé.
+
+### Mapping des colonnes (voir `build_match_payload` dans scrape_ffhb_club.py)
+
+- `Code Gesthand` = l'ID FFHB (`rencontre-XXXXXXX`, extrait du lien scrapé)
+  pour les matchs venant du scraper. Les matchs ajoutés à la main gardent le
+  format historique de Julien (date + indice, ex. `1309E` — **pas** un vrai
+  code Gesthand malgré le nom de la colonne, un identifiant qu'il invente
+  lui-même).
+- `Eq1`/`Eq2` : le côté qui est nous reçoit le nom de section du club (propre,
+  ex. `Entente Villette Genas`) + `Eq1X`/`Eq2X` = notre `indice` (A/B/C...,
+  vide si l'équipe est seule dans sa catégorie — cf discussion avec Julien).
+  Le côté adverse reçoit le nom FFHB brut (souvent un peu bruité, ex. `M18F
+  EXC - ENTENTE LYON EST HANDBALL - 1`) ; `split_trailing_index()` tente d'en
+  extraire un indice en suffixe (` - 1`, ` 2`...) quand il y en a un.
+- `Date`/`Heure` ne sont écrites **que si FFHB a confirmé la date** (présence
+  de l'heure dans le texte scrapé) — jamais une date approximative/plage.
+- `Eq1Score`/`Eq2Score`/`WinLose` : seulement si FFHB affiche un score.
+  `WinLose` est calculé du point de vue du club (Victoire/Défaite/Match Nul),
+  pas juste "qui a gagné dans l'absolu".
+- `Story*`/`PhotoEq` (pilotage de publication, hérité du flux Make
+  actuellement manuel) : **jamais touchées** par le scraper, ni à la
+  création ni à la mise à jour — en dehors de son périmètre.
+- `INSTA_Cat`/`INSTA_date`/`INSTA_Eq1`/`INSTA_Eq2`/`Insta_Ville` : remplies
+  **uniquement à la création** de la ligne (aide pour un futur Canva Bulk
+  Create), jamais réécrites ensuite.
+
+### Écosystème plus large (contexte, pas construit ici)
+
+Le club a 3 autres repos (`form-score-club`, `form-score-club-2-`,
+`form-score-club-photo-only`) qui lisent/écrivent cette même sheet "Matchs"
+via des scénarios Make.com (score en direct pendant le match, photo de fin
+de match archivée sur Dropbox). `form-score-club/Claude.md` décrit un plan
+plus large (bascule vers Supabase, dashboard, PWA) resté au stade de la
+session 1/6. Objectif à terme évoqué avec Julien : remplacer aussi ces
+scénarios Make par le même Web App Apps Script (pas fait dans cette
+itération — seule l'écriture des matchs scrapés est en place).

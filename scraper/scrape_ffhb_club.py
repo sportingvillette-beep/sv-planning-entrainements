@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sys
+import urllib.request
 from difflib import SequenceMatcher
 
 import pandas as pd
@@ -68,6 +69,12 @@ def match_team_name(section: str, candidates: list):
 def team_row_id(section: str, indice: str, categorie: str, phase: str) -> str:
     return slugify(f"{section}_{indice}_{categorie}_{phase}")
 
+def clean_numeric_str(v) -> str:
+    """clean_text(str(v)) mais retire le '.0' que pandas ajoute aux colonnes numériques
+    contenant des valeurs manquantes (dtype float64), ex. '3.0' -> '3'."""
+    s = clean_text(str(v or ""))
+    return s[:-2] if re.match(r"^\d+\.0$", s) else s
+
 def load_sheet_teams() -> pd.DataFrame:
     df = pd.read_csv(SHEET_CSV_URL, encoding="utf-8")
     df.columns = [c.strip() for c in df.columns]
@@ -78,6 +85,7 @@ def load_sheet_teams() -> pd.DataFrame:
             continue
         indice = clean_text(str(r.get("Indice équipe", "") or "")) if pd.notna(r.get("Indice équipe")) else ""
         categorie = clean_text(str(r.get("Categorie", "") or ""))
+        genre = clean_text(str(r.get("Genre", "") or ""))
         for phase, lien_col, niveau_col, poule_col in [
             ("P1", "P1.Lien", "P1.Niveau", "P1.Poule"),
             ("P2", "P2.Lien", "P2.Niveau", "P2.Poule"),
@@ -90,9 +98,10 @@ def load_sheet_teams() -> pd.DataFrame:
                 "section": section,
                 "indice": indice,
                 "categorie": categorie,
+                "genre": genre,
                 "phase": phase,
                 "niveau": clean_text(str(r.get(niveau_col, "") or "")),
-                "poule_num": clean_text(str(r.get(poule_col, "") or "")),
+                "poule_num": clean_numeric_str(r.get(poule_col, "")),
                 "lien": lien,
             })
     return pd.DataFrame(rows)
@@ -142,8 +151,10 @@ def resolve_new_teams(teams: pd.DataFrame) -> list:
                 "section": t["section"],
                 "indice": t["indice"],
                 "categorie": t["categorie"],
+                "genre": t.get("genre", ""),
                 "phase": t["phase"],
                 "niveau": t["niveau"],
+                "poule_num": t.get("poule_num", ""),
                 "poule_url": base_url,
                 "equipe_ffhb_proposee": best_name or "",
                 "confiance": round(best_score, 2),
@@ -215,6 +226,137 @@ def load_club_salle_cache(outdir: str) -> dict:
             }
     return cache
 
+FR_MONTHS = {
+    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6,
+    "juillet": 7, "août": 8, "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11,
+    "décembre": 12, "decembre": 12,
+}
+
+def parse_confirmed_date(date_str: str):
+    """Retourne (DD/MM/YYYY, HH:MM) uniquement si la date est confirmée (format complet
+    avec heure, ex. 'dimanche 13 septembre 2026 à 16H00'). Sinon (None, None) — on
+    n'écrit jamais une date approximative dans la sheet Matchs."""
+    if not date_str:
+        return None, None
+    m = re.search(r"(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})\s+à\s+(\d{1,2})[hH](\d{2})", date_str)
+    if not m:
+        return None, None
+    day, month_name, year, hour, minute = m.groups()
+    month = FR_MONTHS.get(month_name.lower())
+    if not month:
+        return None, None
+    return f"{int(day):02d}/{month:02d}/{year}", f"{int(hour):02d}:{minute}"
+
+def extract_ffhb_id(lien: str) -> str:
+    m = re.search(r"(rencontre-\d+)", lien or "")
+    return m.group(1) if m else ""
+
+def split_trailing_index(name: str):
+    """Sépare un éventuel indice en suffixe du nom FFHB adverse, ex.
+    'M18F EXC - ENTENTE LYON EST HANDBALL - 1' -> (base, '1'),
+    'ST GENIS LAVAL AL HANDBALL 2' -> (base, '2'). Pas d'indice détecté -> ('', nom entier)."""
+    name = (name or "").strip()
+    m = re.match(r"^(.*\S)[\s-]+([A-Za-z]|\d{1,2})$", name)
+    if m and len(m.group(1)) > 3:
+        return m.group(1).strip(" -"), m.group(2)
+    return name, ""
+
+def _s(v) -> str:
+    """Convertit en chaîne en traitant NaN/None comme une chaîne vide (pandas transforme
+    sinon un NaN en la chaîne littérale 'nan' via str())."""
+    if v is None:
+        return ""
+    try:
+        if pd.isna(v):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(v).strip()
+
+def build_match_payload(row, t) -> dict:
+    """Construit le payload JSON pour un match scrapé, prêt à envoyer au Web App."""
+    ffhb_id = extract_ffhb_id(_s(row.get("lien", "")))
+    if not ffhb_id:
+        return None
+
+    domicile = _s(row.get("domicile", ""))
+    exterieur = _s(row.get("extérieur", ""))
+    us_name = _s(t.get("equipe_ffhb_proposee", ""))
+    us_is_domicile = domicile.upper() == us_name.upper()
+
+    our_indice = _s(t.get("indice", ""))
+    if us_is_domicile:
+        eq1, eq1x = t["section"], our_indice
+        eq2, eq2x = split_trailing_index(exterieur)
+    else:
+        eq2, eq2x = t["section"], our_indice
+        eq1, eq1x = split_trailing_index(domicile)
+
+    date_ddmmyyyy, heure = parse_confirmed_date(_s(row.get("date/heure", "")))
+
+    score = _s(row.get("score", ""))
+    eq1score = eq2score = winlose = ""
+    if " - " in score:
+        s_dom, s_ext = [s.strip() for s in score.split(" - ", 1)]
+        if s_dom.isdigit() and s_ext.isdigit():
+            eq1score, eq2score = s_dom, s_ext
+            us_score = int(s_dom) if us_is_domicile else int(s_ext)
+            other_score = int(s_ext) if us_is_domicile else int(s_dom)
+            winlose = "Victoire" if us_score > other_score else ("Défaite" if us_score < other_score else "Match Nul")
+
+    return {
+        "code": ffhb_id,
+        "categorie": _s(t.get("categorie", "")),
+        "genre": _s(t.get("genre", "")),
+        "index": our_indice,
+        "championnat": _s(t.get("niveau", "")),
+        "poule": _s(t.get("poule_num", "")),
+        "journee": _s(row.get("journée", "")),
+        "eq1": eq1, "eq1x": eq1x,
+        "eq2": eq2, "eq2x": eq2x,
+        "date": date_ddmmyyyy or "",
+        "heure": heure or "",
+        "gymnase": _s(row.get("gymnase", "")),
+        "ville": _s(row.get("ville", "")),
+        "eq1score": eq1score,
+        "eq2score": eq2score,
+        "winlose": winlose,
+    }
+
+def post_match_to_sheet(payload: dict) -> bool:
+    """Envoie un match au Web App Apps Script (upsert). No-op silencieux si
+    SHEET_WEBAPP_URL / SHEET_WEBAPP_SECRET ne sont pas configurées (ex. en local)."""
+    if not payload:
+        return False
+    url = os.environ.get("SHEET_WEBAPP_URL", "").strip()
+    secret = os.environ.get("SHEET_WEBAPP_SECRET", "").strip()
+    if not url or not secret:
+        return False
+    body = json.dumps({"secret": secret, "action": "add_match", "match": payload}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            if result.get("ok"):
+                print(f"    -> Sheet Matchs: {result.get('action')} ({payload['code']})")
+                return True
+            print(f"    -> Sheet Matchs ERREUR ({payload['code']}): {result.get('error')}")
+            return False
+    except Exception as e:
+        print(f"    -> Sheet Matchs ERREUR réseau ({payload['code']}): {e}")
+        return False
+
+def sync_matches_to_sheet(team_calendrier, t) -> int:
+    """Envoie chaque match de team_calendrier au Web App. Retourne le nombre de succès."""
+    if team_calendrier is None or team_calendrier.empty:
+        return 0
+    n_ok = 0
+    for _, row in team_calendrier.iterrows():
+        payload = build_match_payload(row, t)
+        if payload and post_match_to_sheet(payload):
+            n_ok += 1
+    return n_ok
+
 def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict):
     """Scrape la poule d'une ligne de mapping (avec cache par poule) et retourne
     (lignes_calendrier_ou_None, ligne_classement_ou_None) pour cette équipe."""
@@ -242,6 +384,9 @@ def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict):
             team_df.insert(0, "indice", t["indice"])
             team_df.insert(0, "section", t["section"])
             team_calendrier = team_df
+            n_synced = sync_matches_to_sheet(team_calendrier, t)
+            if n_synced:
+                print(f"  ✔ {n_synced} match(s) synchronisé(s) vers la sheet Matchs.")
         else:
             print("  ⚠ Aucun match trouvé pour ce nom d'équipe dans la poule (mapping probablement faux).")
 
