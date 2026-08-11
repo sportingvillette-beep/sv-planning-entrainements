@@ -58,10 +58,13 @@ function doPost(e) {
   try {
     // Les formulaires club (score/photo) postent en multipart/form-data (nécessaire pour
     // envoyer un fichier) : les champs arrivent dans e.parameter, pas e.postData.contents.
-    // Le scraper (GitHub Actions) continue de poster du JSON classique.
-    const isMultipart = e.postData && String(e.postData.type || '').indexOf('multipart/form-data') === 0;
+    // Pour une requête multipart, Apps Script ne peuple pas forcément e.postData (contents
+    // undefined) — on ne passe donc par le parsing JSON que si le type est explicitement
+    // application/json (seul le scraper, JSON classique, envoie ce type) ; tout le reste
+    // est traité comme des champs de formulaire (e.parameter).
+    const isJson = e.postData && e.postData.type === 'application/json';
 
-    if (isMultipart) {
+    if (!isJson) {
       const p = e.parameter;
       if (p.secret !== FORM_SHARED_SECRET) {
         return jsonResponse({ ok: false, error: 'secret invalide' });
