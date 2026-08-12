@@ -108,26 +108,28 @@
   </div>
 </div>
 
-<div class="panel">
-  <h2>Générer planning</h2>
-  <div class="btn-row">
-    <button onclick="generate('complet')">📅 Par équipe (complet)</button>
-    <button onclick="generate('minimal')">🌐 Par équipe (pour le site)</button>
-    <button onclick="generate('gymnase')">🏟️ Par gymnase</button>
-    <button class="secondary" onclick="location.reload()">🔄 Recharger la page</button>
+<div class="panel-row">
+  <div class="panel">
+    <h2>Générer planning</h2>
+    <div class="btn-row">
+      <button onclick="generate('complet')">📅 Par équipe (complet)</button>
+      <button onclick="generate('minimal')">🌐 Par équipe (pour le site)</button>
+      <button onclick="generate('gymnase')">🏟️ Par gymnase</button>
+      <button class="secondary" onclick="location.reload()">🔄 Recharger la page</button>
+    </div>
+    <div id="status" class="status"></div>
   </div>
-  <div id="status" class="status"></div>
-</div>
 
-<div class="panel">
-  <h2>Team Book (PDF, un par entente)</h2>
-  <div class="btn-row">
-    <button onclick="generateTeamBook('Sporting Villette')">🤾 Sporting Villette</button>
-    <button onclick="generateTeamBook('Entente Villette Genas')">🤾 Entente Villette Genas</button>
-    <button onclick="generateTeamBook('Entente Lyon Est Handball (F)')">🤾 Entente Lyon Est Handball (F)</button>
-    <button onclick="generateTeamBook('Entente Est Lyonnais (G)')">🤾 Entente Est Lyonnais (G)</button>
+  <div class="panel">
+    <h2>Team Book (PDF, un par entente)</h2>
+    <div class="btn-row">
+      <button onclick="generateTeamBook('Sporting Villette')">🤾 Sporting Villette</button>
+      <button onclick="generateTeamBook('Entente Villette Genas')">🤾 Entente Villette Genas</button>
+      <button onclick="generateTeamBook('Entente Lyon Est Handball (F)')">🤾 Entente Lyon Est Handball (F)</button>
+      <button onclick="generateTeamBook('Entente Est Lyonnais (G)')">🤾 Entente Est Lyonnais (G)</button>
+    </div>
+    <div id="status-tb" class="status"></div>
   </div>
-  <div id="status-tb" class="status"></div>
 </div>
 
 <div class="panel">
