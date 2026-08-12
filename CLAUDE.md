@@ -224,9 +224,11 @@ disparaître les données des équipes non sélectionnées.
 GitHub Actions n'évalue les triggers `schedule:` que sur la **branche par
 défaut** (`main`) — le cron ne tournera qu'une fois ce workflow mergé, pas
 sur une branche de feature. Le cron est en UTC sans awareness du changement
-d'heure française ; `30 20 * * 0` (dimanche 20h30 UTC) tombe vers 21h30 CET
-(hiver) ou 22h30 CEST (été) — accepté comme compromis "dimanche soir" plutôt
-que de gérer deux cron saisonniers.
+d'heure française ; `0 1 * * *` (1h00 UTC tous les jours) tombe vers 2h00 CET
+(hiver) ou 3h00 CEST (été) — accepté comme compromis plutôt que de gérer deux
+cron saisonniers. Remplace l'ancien cron hebdomadaire du dimanche soir : un
+run quotidien couvre déjà le week-end (matchs du dimanche scrapés dans la
+nuit de dimanche à lundi) et garde aussi les données fraîches en semaine.
 
 ### Rafraîchissement manuel depuis l'UI
 
