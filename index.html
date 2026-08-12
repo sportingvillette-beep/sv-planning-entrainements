@@ -883,8 +883,42 @@ function parseFrenchDate(str) {
 function fmtDateFr(d) {
   return d.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long' });
 }
+// Date pas encore confirmée : FFHB ne donne qu'une plage samedi-dimanche pour ce week-end
+// (jamais d'autre jour) — on affiche donc "samedi X ou dimanche Y" plutôt qu'une seule
+// date arbitraire suivie de "(date à confirmer)".
+function fmtUnconfirmedDateLabel(saturday) {
+  const sunday = new Date(saturday); sunday.setDate(sunday.getDate() + 1);
+  const sameMonth = saturday.getMonth() === sunday.getMonth();
+  const satLabel = saturday.toLocaleDateString('fr-FR', sameMonth ? { weekday: 'long', day: '2-digit' } : { weekday: 'long', day: '2-digit', month: 'long' });
+  const sunLabel = sunday.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long' });
+  return `${satLabel} ou ${sunLabel}`;
+}
 function equipeLabel(row) {
   return [row['categorie'], row['indice'], row['section']].filter(Boolean).join(' ');
+}
+
+function ordinalFr(n) {
+  return n === 1 ? '1er' : `${n}e`;
+}
+
+// Beaucoup de libellés FFHB (surtout pour les ententes) sont préfixés par le code de poule,
+// ex. "M16F EXC - ENTENTE LYON EST HANDBALL" ou suffixés par un indice d'équipe, ex.
+// "... - 1" / "... 2" — on nettoie les deux pour un affichage "nom du club + indice éventuel".
+// Heuristique best-effort sur la structure observée (préfixe = jeton avec chiffre + jeton
+// tout en majuscules + tiret) : peut nécessiter des ajustements sur des cas non encore vus.
+function stripCategoryPrefix(name) {
+  const m = name.match(/^[A-Za-zÀ-ÿ]*\d[A-Za-zÀ-ÿ0-9]*\s+[A-ZÀ-Ÿ0-9]+\s*-\s*(.+)$/);
+  return m ? m[1].trim() : name;
+}
+function splitTrailingIndex(name) {
+  const m = (name || '').trim().match(/^(.*\S)[\s-]+([A-Za-z]|\d{1,2})$/);
+  if (m && m[1].length > 3) return { base: m[1].replace(/[\s-]+$/, '').trim(), index: m[2] };
+  return { base: (name || '').trim(), index: '' };
+}
+function cleanOpponentLabel(raw) {
+  const stripped = stripCategoryPrefix((raw || '').trim());
+  const { base, index } = splitTrailingIndex(stripped);
+  return index ? `${base} - ${index}` : base;
 }
 
 function renderFFHBTable(rows) {
@@ -893,13 +927,21 @@ function renderFFHBTable(rows) {
     const d = parseFrenchDate(r['date/heure']);
     const confirmee = r['date_confirmee'] === 'True' || r['date_confirmee'] === true;
     const heureMatch = String(r['date/heure'] || '').match(/\d{1,2}[hH]\d{2}/);
-    let dateLabel = d ? fmtDateFr(d) : (r['date/heure'] || '');
-    if (d && confirmee && heureMatch) dateLabel += ' à ' + heureMatch[0];
-    else if (d && !confirmee) dateLabel += ' (date à confirmer)';
+    let dateLabel;
+    if (d && confirmee) {
+      dateLabel = fmtDateFr(d);
+      if (heureMatch) dateLabel += ' à ' + heureMatch[0];
+    } else if (d) {
+      dateLabel = fmtUnconfirmedDateLabel(saturdayOf(d));
+    } else {
+      dateLabel = r['date/heure'] || '';
+    }
     const lieu = r['gymnase'] ? `${r['gymnase']}${r['ville'] ? ' — ' + r['ville'] : ''}` : '';
     const score = String(r['score'] || '').trim() ? `<b>${r['score']}</b>` : '<span style="color:#999;">à venir</span>';
-    const classement = r['_classement'] ? r['_classement'] : '<span style="color:#999;">—</span>';
-    return `<tr><td>${equipeLabel(r)}</td><td>${classement}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td><td>${score}</td><td>${lieu}</td></tr>`;
+    const classement = r['_classement'] || '<span style="color:#999;">—</span>';
+    const domext = r['_domext'] || '<span style="color:#999;">—</span>';
+    const adversaire = r['_adversaire'] || `${r['domicile']} – ${r['extérieur']}`;
+    return `<tr><td>${equipeLabel(r)}</td><td>${classement}</td><td>${dateLabel}</td><td>${domext}</td><td>${adversaire}</td><td>${score}</td><td>${lieu}</td></tr>`;
   }).join('\n');
   return `<div class="ffhb-wrapper">
 <style>
@@ -909,7 +951,7 @@ function renderFFHBTable(rows) {
 .ffhb-table thead th { background: #1a1a1a; color: #fff; }
 .ffhb-table tbody tr:nth-child(even) { background: #f7f7f7; }
 </style>
-<table class="ffhb-table"><thead><tr><th>Équipe</th><th>Classement</th><th>Date</th><th>Match</th><th>Score</th><th>Lieu</th></tr></thead><tbody>${trs}</tbody></table>
+<table class="ffhb-table"><thead><tr><th>Équipe</th><th>Classement</th><th>Date</th><th>Dom/Ext</th><th>Adversaire</th><th>Score</th><th>Lieu</th></tr></thead><tbody>${trs}</tbody></table>
 </div>`;
 }
 
@@ -918,21 +960,45 @@ async function loadCalendrierClub() {
   return parseCSV(csvText);
 }
 
-// Ajoute r._classement = "3e/6" (position dans la poule / nombre d'équipes) à chaque ligne,
-// en rapprochant via team_mapping.csv (même clé section/indice/categorie/phase) puis en
-// cherchant l'équipe du club dans classements_club.csv filtré sur cette même poule.
+// Cherche le rang (Pos.) d'un libellé d'équipe FFHB dans la poule (classements_club.csv déjà
+// filtré). Match exact d'abord, puis inclusion dans un sens ou l'autre (variations mineures
+// de libellé entre calendrier et classement observées sur certaines poules).
+function findPosInPoule(poule, label) {
+  const target = (label || '').toUpperCase().trim();
+  if (!target) return null;
+  let idx = poule.findIndex(c => (c['Club'] || '').toUpperCase().trim() === target);
+  if (idx === -1) idx = poule.findIndex(c => (c['Club'] || '').toUpperCase().includes(target) || target.includes((c['Club'] || '').toUpperCase()));
+  return idx !== -1 ? parseInt(poule[idx]['Pos.'], 10) || null : null;
+}
+
+// Ajoute à chaque ligne : r._classement ("3e vs 1er", domicile vs extérieur), r._domext
+// ("DOM"/"EXT", position de l'équipe du club dans ce match) et r._adversaire (nom adverse
+// nettoyé). Rapprochement via team_mapping.csv (même clé section/indice/categorie/phase)
+// pour savoir laquelle des 2 équipes du match est la nôtre, puis classements_club.csv
+// (filtré sur cette même poule) pour les rangs des 2 équipes.
 async function attachClassementLabels(rows) {
   if (!rows.length) return rows;
   const [mappingRows, clText] = await Promise.all([loadTeamMappingRows(), fetchText(CLASSEMENTS_CLUB_URL)]);
   const clRows = parseCSV(clText);
   return rows.map(r => {
     const ref = mappingRows.find(m => keyMatch(r, m));
-    if (!ref) return r;
+    const domicile = r['domicile'] || '';
+    const exterieur = r['extérieur'] || '';
+    const usIsDomicile = ref ? domicile.toUpperCase().includes((ref['equipe_ffhb_proposee'] || '').toUpperCase()) : null;
+    const opponentRaw = usIsDomicile === null ? '' : (usIsDomicile ? exterieur : domicile);
+
     const poule = clRows
       .filter(c => keyMatch(c, r))
       .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
-    const idx = poule.findIndex(c => (c['Club'] || '').toUpperCase().includes((ref['equipe_ffhb_proposee'] || '').toUpperCase()));
-    return { ...r, _classement: idx !== -1 ? `${poule[idx]['Pos.']}e/${poule.length}` : '' };
+    const posDom = findPosInPoule(poule, domicile);
+    const posExt = findPosInPoule(poule, exterieur);
+
+    return {
+      ...r,
+      _classement: (posDom && posExt) ? `${ordinalFr(posDom)} vs ${ordinalFr(posExt)}` : '',
+      _domext: usIsDomicile === null ? '' : (usIsDomicile ? 'DOM' : 'EXT'),
+      _adversaire: opponentRaw ? cleanOpponentLabel(opponentRaw) : '',
+    };
   });
 }
 
