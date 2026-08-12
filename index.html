@@ -1182,21 +1182,42 @@ function renderClassementTable(rows, highlightName) {
   return `<table class="ffhb-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
-function renderCalendrierCompletTable(rows) {
+// ref = ligne team_mapping de l'équipe affichée (pour savoir laquelle des 2 équipes du
+// match est la nôtre) ; poule = classements_club.csv déjà filtré sur cette poule (pour les
+// rangs domicile/extérieur). Même présentation que renderFFHBTable (vue par week-end).
+function renderCalendrierCompletTable(rows, ref, poule) {
   if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Aucun match trouvé.</p>';
   const sorted = [...rows].sort((a, b) => (parseInt(a['journée'], 10) || 0) - (parseInt(b['journée'], 10) || 0));
   const trs = sorted.map(r => {
     const d = parseFrenchDate(r['date/heure']);
     const confirmee = r['date_confirmee'] === 'True' || r['date_confirmee'] === true;
     const heureMatch = String(r['date/heure'] || '').match(/\d{1,2}[hH]\d{2}/);
-    let dateLabel = d ? fmtDateFr(d) : (r['date/heure'] || '');
-    if (d && confirmee && heureMatch) dateLabel += ' à ' + heureMatch[0];
-    else if (d && !confirmee) dateLabel += ' (à confirmer)';
+    let dateLabel;
+    if (d && confirmee) {
+      dateLabel = fmtDateFr(d);
+      if (heureMatch) dateLabel += ' à ' + heureMatch[0];
+    } else if (d) {
+      dateLabel = fmtUnconfirmedDateLabel(saturdayOf(d));
+    } else {
+      dateLabel = r['date/heure'] || '';
+    }
     const lieu = r['gymnase'] ? `${r['gymnase']}${r['ville'] ? ' — ' + r['ville'] : ''}` : '';
     const score = String(r['score'] || '').trim() ? `<b>${r['score']}</b>` : '<span style="color:#999;">à venir</span>';
-    return `<tr><td>${r['journée']}</td><td>${dateLabel}</td><td>${r['domicile']} – ${r['extérieur']}</td><td>${score}</td><td>${lieu}</td></tr>`;
+
+    const domicile = r['domicile'] || '';
+    const exterieur = r['extérieur'] || '';
+    const usIsDomicile = domicile.toUpperCase().includes((ref['equipe_ffhb_proposee'] || '').toUpperCase());
+    const opponentRaw = usIsDomicile ? exterieur : domicile;
+    const adversaire = opponentRaw ? cleanOpponentLabel(opponentRaw) : `${domicile} – ${exterieur}`;
+    const domext = usIsDomicile ? 'DOM' : 'EXT';
+
+    const posDom = findPosInPoule(poule, domicile);
+    const posExt = findPosInPoule(poule, exterieur);
+    const classement = (posDom && posExt) ? `${ordinalFr(posDom)} vs ${ordinalFr(posExt)}` : '<span style="color:#999;">—</span>';
+
+    return `<tr><td>${r['journée']}</td><td>${classement}</td><td>${dateLabel}</td><td>${domext}</td><td>${adversaire}</td><td>${score}</td><td>${lieu}</td></tr>`;
   }).join('\n');
-  return `<table class="ffhb-table"><thead><tr><th>J</th><th>Date</th><th>Match</th><th>Score</th><th>Lieu</th></tr></thead><tbody>${trs}</tbody></table>`;
+  return `<table class="ffhb-table"><thead><tr><th>J</th><th>Classement</th><th>Date</th><th>Dom/Ext</th><th>Adversaire</th><th>Score</th><th>Lieu</th></tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 async function loadTeamSelect() {
@@ -1242,7 +1263,7 @@ async function generateEquipeSituation() {
 <h3>Classement — ${label}</h3>
 ${renderClassementTable(clRows, ref['equipe_ffhb_proposee'])}
 <h3>Calendrier complet</h3>
-${renderCalendrierCompletTable(calRows)}
+${renderCalendrierCompletTable(calRows, ref, clRows)}
 </div>`;
 
     contentEl.innerHTML = html;
