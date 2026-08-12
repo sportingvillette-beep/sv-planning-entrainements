@@ -12,6 +12,9 @@
  *
  * MISE À JOUR (cas normal — ce Web App est déjà déployé en prod pour le scraper FFHB,
  * l'URL /exec existe déjà et est en dur dans index.html + les 2 repos formulaires) :
+ * 0) Si ce n'est pas déjà fait : dans la feuille "Matchs", ajouter une colonne "Score
+ *    Source" tout à la fin (juste après Insta_Ville, colonne AE) — sert à verrouiller la
+ *    saisie manuelle du score une fois qu'il a été confirmé par le scraper FFHB.
  * 1) Ouvrir le Google Sheet "Com matchs réseaux" > Extensions > Apps Script.
  * 2) Coller ce fichier (remplace le contenu de Code.gs).
  * 3) Remplacer SHARED_SECRET et FORM_SHARED_SECRET ci-dessous par deux valeurs
@@ -47,7 +50,7 @@ const PHOTOS_FOLDER_ID = '1gwZToQYNPgDnDusnAAQtuHbff5fzPjTK'; // ID du dossier D
 const PROGRESS_CACHE_KEY = 'scrape_progress';
 const PROGRESS_CACHE_TTL = 21600; // 6h (max autorisé par CacheService)
 
-// Ordre exact des colonnes du Sheet (A -> AD). Ne pas réordonner sans adapter le Sheet.
+// Ordre exact des colonnes du Sheet (A -> AE). Ne pas réordonner sans adapter le Sheet.
 const COLUMNS = [
   'Code Gesthand', 'Catégorie', 'Genre', 'Index', 'Championnat', 'Poule', 'Journée',
   'Eq1', 'Eq1X', 'Date', 'Heure', 'Eq2', 'Eq2X', 'Gymnase', 'Ville',
@@ -55,6 +58,7 @@ const COLUMNS = [
   'Story Insta', 'Get Story', 'Story avant match', 'Publier Story', 'Lien Story',
   'PhotoEq', 'Story résultat',
   'INSTA_Cat', 'INSTA_date', 'INSTA_Eq1', 'INSTA_Eq2', 'Insta_Ville',
+  'Score Source', // 'ffhb' (confirmé par le scraper, verrouille la saisie manuelle) ou 'manuel'
 ];
 
 const JOURS_FR = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -161,9 +165,15 @@ function upsertMatch(m) {
   if (m.date) values['Date'] = m.date;
   if (m.heure) values['Heure'] = m.heure;
   // Score/WinLose : n'écrase que si FFHB a publié un score (source de vérité, voir CLAUDE.md).
+  // Marque aussi Score Source='ffhb', qui verrouille la saisie manuelle côté formulaire club
+  // (cf updateScore) — un score FFHB est définitif, une correction éventuelle se fait
+  // directement dans la sheet, pas via le formulaire.
   if (m.eq1score !== undefined && m.eq1score !== '') values['Eq1Score'] = m.eq1score;
   if (m.eq2score !== undefined && m.eq2score !== '') values['Eq2Score'] = m.eq2score;
   if (m.winlose) values['WinLose'] = m.winlose;
+  if ((m.eq1score !== undefined && m.eq1score !== '') || (m.eq2score !== undefined && m.eq2score !== '')) {
+    values['Score Source'] = 'ffhb';
+  }
 
   if (rowNumber) {
     const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
@@ -190,7 +200,9 @@ function upsertMatch(m) {
  * Formulaire score en direct (remplace le scénario Make "Formulaire nouveau score",
  * route "sans photo" — la route "avec photo_finale" était du code mort, non reproduite).
  * Écrase toujours Eq1Score/Eq2Score/WinLose : contrairement au scraper, ici c'est une
- * saisie humaine explicite, donc source de vérité la plus récente.
+ * saisie humaine explicite, donc source de vérité la plus récente — SAUF si le score a déjà
+ * été confirmé par le scraper FFHB (Score Source='ffhb'), auquel cas la modification
+ * manuelle est bloquée (verrou strict ; correction éventuelle directement dans la sheet).
  */
 function updateScore(p) {
   if (!p.match_id) return { ok: false, error: 'match_id manquant' };
@@ -200,9 +212,13 @@ function updateScore(p) {
 
   const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
   const current = rowRange.getValues()[0];
+  if (current[colIndex('Score Source')] === 'ffhb') {
+    return { ok: false, error: 'Score déjà confirmé par la FFHB — modification manuelle bloquée.' };
+  }
   if (p.score_dom !== undefined && p.score_dom !== '') current[colIndex('Eq1Score')] = p.score_dom;
   if (p.score_ext !== undefined && p.score_ext !== '') current[colIndex('Eq2Score')] = p.score_ext;
   if (p.winlose) current[colIndex('WinLose')] = p.winlose;
+  current[colIndex('Score Source')] = 'manuel';
   rowRange.setValues([current]);
   return { ok: true, action: 'score_updated', row: rowNumber };
 }
