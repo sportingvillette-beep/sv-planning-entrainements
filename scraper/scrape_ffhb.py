@@ -12,6 +12,20 @@ def clean_text(x: str) -> str:
 def slugify(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_") or "equipe"
 
+def strip_postal_code(ville: str) -> str:
+    """Retire un code postal français en préfixe (ex. '69740 GENAS' -> 'GENAS')."""
+    return re.sub(r"^\d{5}\s+", "", ville or "").strip()
+
+def sentence_case(s: str) -> str:
+    """Majuscule initiale seulement (reste en minuscules), y compris après un tiret ou une
+    apostrophe (ex. 'HALLE DES SPORTS' -> 'Halle des sports', "VILLETTE D'ANTHON" ->
+    "Villette d'Anthon", 'SAINT-PRIEST' -> 'Saint-Priest'). Utilisé pour gymnase/ville, dont
+    FFHB affiche le nom tout en majuscules."""
+    s = (s or "").strip().lower()
+    if not s:
+        return s
+    return re.sub(r"(^|[-'’])(\w)", lambda m: m.group(1) + m.group(2).upper(), s)
+
 def parse_table_by_heading(soup: BeautifulSoup, heading_keywords: List[str]) -> Optional[pd.DataFrame]:
     for h in soup.find_all(re.compile(r"^h[1-6]$")):
         txt = clean_text(h.get_text(" "))
@@ -98,9 +112,9 @@ def extract_salle(soup: BeautifulSoup) -> dict:
         return {"gymnase": "", "ville": "", "adresse_complete": ""}
     spans = address_div.find_all("span")
     texts = [clean_text(s.get_text(" ")) for s in spans]
-    gymnase = texts[0] if len(texts) > 0 else ""
+    gymnase = sentence_case(texts[0]) if len(texts) > 0 else ""
     rue = texts[1] if len(texts) > 1 else ""
-    ville = texts[2] if len(texts) > 2 else ""
+    ville = sentence_case(strip_postal_code(texts[2])) if len(texts) > 2 else ""
     adresse_complete = ", ".join(t for t in [gymnase, rue, ville] if t)
     return {"gymnase": gymnase, "ville": ville, "adresse_complete": adresse_complete}
 
@@ -136,9 +150,14 @@ def load_salle_cache(outdir: str, team_filter: str) -> dict:
         gymnase = str(row.get("gymnase", "") or "").strip()
         lien = str(row.get("lien", "") or "").strip()
         if lien and score and gymnase:
+            # Réapplique la mise en forme (sentence case + retrait code postal) sur les
+            # valeurs relues du cache : les rattrape automatiquement au run suivant si elles
+            # avaient été scrapées avant l'ajout de ce nettoyage, sans script de migration à part.
+            gymnase = sentence_case(gymnase)
+            ville = sentence_case(strip_postal_code(str(row.get("ville", "") or "")))
             cache[lien] = {
                 "gymnase": gymnase,
-                "ville": str(row.get("ville", "") or ""),
+                "ville": ville,
                 "adresse_complete": str(row.get("adresse_complete", "") or ""),
             }
     return cache
