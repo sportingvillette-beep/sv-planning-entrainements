@@ -1287,7 +1287,7 @@ function stopProgressPolling() {
 function startProgressPolling(dispatchedAt) {
   stopProgressPolling();
   renderProgress(null);
-  _progressStopAt = Date.now() + 15 * 60 * 1000; // filet de sécurité : 15 min max
+  _progressStopAt = Date.now() + 90 * 60 * 1000; // filet de sécurité : 90 min max
   _progressTimer = setInterval(async () => {
     if (Date.now() > _progressStopAt) { stopProgressPolling(); return; }
     try {

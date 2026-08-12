@@ -267,7 +267,9 @@ créneau de l'équipe dans la barre :
 Un `started_at` (posé une fois par run) est comparé côté client au moment
 du déclenchement pour ignorer une progression laissée par un run précédent
 (sinon un `done:true` périmé stopperait le sondage immédiatement). Filet de
-sécurité : arrêt du sondage après 15 min.
+sécurité : arrêt du sondage après 90 min (relevé de 15 min — un run peut
+prendre plus longtemps que prévu en tout début de saison, sur les poules
+avec beaucoup de journées à parcourir).
 
 ## Synchronisation vers la sheet "Matchs" (remplace le copier-coller manuel)
 
