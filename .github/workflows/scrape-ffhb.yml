@@ -2,12 +2,14 @@ name: Scrape FFHB
 
 on:
   schedule:
-    # Dimanche soir, après les matchs du week-end. GitHub Actions n'évalue les cron
-    # que sur la branche par défaut (main) — ce déclenchement automatique ne
+    # Tous les soirs à ~2h du matin (heure de Paris). GitHub Actions n'évalue les
+    # cron que sur la branche par défaut (main) — ce déclenchement automatique ne
     # démarrera donc qu'une fois ce workflow mergé sur main.
-    # Le cron GitHub Actions est en UTC sans gestion du changement d'heure : 20h30 UTC
-    # correspond à ~21h30 (hiver, CET) ou ~22h30 (été, CEST) heure de Paris.
-    - cron: "30 20 * * 0"
+    # Le cron GitHub Actions est en UTC sans gestion du changement d'heure : 1h00 UTC
+    # correspond à 2h00 (hiver, CET) ou 3h00 (été, CEST) heure de Paris — couvre
+    # aussi le week-end (les matchs du dimanche sont scrapés dans la nuit de
+    # dimanche à lundi, remplace l'ancien cron hebdomadaire du dimanche soir).
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       teams:
