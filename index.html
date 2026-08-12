@@ -30,6 +30,9 @@
   }
   .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 14px; }
   .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .panel-row { display: flex; gap: 18px; align-items: stretch; }
+  .panel-row .panel { flex: 1; margin-bottom: 18px; }
+  @media (max-width: 720px) { .panel-row { flex-direction: column; } }
   button, .btn-link {
     background: var(--accent); color: #fff; border: none; border-radius: 7px;
     padding: 11px 16px; font-size: 14px; cursor: pointer; text-decoration: none;
@@ -87,11 +90,21 @@
 <h1>🤾 Sporting Villette — Lanceur planning</h1>
 <div class="subtitle">Base équipes Google Sheet → génération des plannings en direct dans le navigateur</div>
 
-<div class="panel">
-  <h2>Base de données</h2>
-  <div class="btn-row">
-    <a class="btn-link" href="https://docs.google.com/spreadsheets/d/1viw-QLYXpA4jNV_bHhfCsBtJ8ueaC0ujXfqtPPpIAq0/edit?usp=sharing" target="_blank" rel="noopener">📊 Ouvrir la base équipes (Google Sheet)</a>
-    <a class="btn-link" href="https://docs.google.com/spreadsheets/d/1BoAaOYLMMAhlHO8YGhHvfE-_uLzJ1kUVRiDSzBhLo6E/edit?gid=0#gid=0" target="_blank" rel="noopener">📊 Ouvrir la base matchs (Google Sheet)</a>
+<div class="panel-row">
+  <div class="panel">
+    <h2>Bases de données</h2>
+    <div class="btn-row">
+      <a class="btn-link" href="https://docs.google.com/spreadsheets/d/1viw-QLYXpA4jNV_bHhfCsBtJ8ueaC0ujXfqtPPpIAq0/edit?usp=sharing" target="_blank" rel="noopener">📊 Ouvrir la base équipes (Google Sheet)</a>
+      <a class="btn-link" href="https://docs.google.com/spreadsheets/d/1BoAaOYLMMAhlHO8YGhHvfE-_uLzJ1kUVRiDSzBhLo6E/edit?gid=0#gid=0" target="_blank" rel="noopener">📊 Ouvrir la base matchs (Google Sheet)</a>
+      <a class="btn-link" href="https://github.com/sportingvillette-beep/sv-planning-entrainements" target="_blank" rel="noopener">🐙 Ouvrir le repo GitHub</a>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Outils externes</h2>
+    <div class="btn-row">
+      <a class="btn-link" href="https://sportingvillette-beep.github.io/form-score-club-2-/" target="_blank" rel="noopener">🏐 Saisie score en direct</a>
+      <a class="btn-link" href="https://sportingvillette-beep.github.io/form-score-club-photo-only/" target="_blank" rel="noopener">📸 Envoi photo fin de match</a>
+    </div>
   </div>
 </div>
 
