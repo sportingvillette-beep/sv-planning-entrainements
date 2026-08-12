@@ -12,9 +12,10 @@
  *
  * MISE À JOUR (cas normal — ce Web App est déjà déployé en prod pour le scraper FFHB,
  * l'URL /exec existe déjà et est en dur dans index.html + les 2 repos formulaires) :
- * 0) Si ce n'est pas déjà fait : dans la feuille "Matchs", ajouter une colonne "Score
- *    Source" tout à la fin (juste après Insta_Ville, colonne AE) — sert à verrouiller la
- *    saisie manuelle du score une fois qu'il a été confirmé par le scraper FFHB.
+ * 0) Si ce n'est pas déjà fait : dans la feuille "Matchs", ajouter 2 colonnes tout à la fin
+ *    (après Insta_Ville) — "Score Source" (colonne AE, verrouille la saisie manuelle du
+ *    score une fois confirmé par le scraper FFHB) puis "Commentaire" (colonne AF, texte
+ *    libre saisi depuis la page match, toujours modifiable même si le score est verrouillé).
  * 1) Ouvrir le Google Sheet "Com matchs réseaux" > Extensions > Apps Script.
  * 2) Coller ce fichier (remplace le contenu de Code.gs).
  * 3) Remplacer SHARED_SECRET et FORM_SHARED_SECRET ci-dessous par deux valeurs
@@ -50,7 +51,7 @@ const PHOTOS_FOLDER_ID = '1gwZToQYNPgDnDusnAAQtuHbff5fzPjTK'; // ID du dossier D
 const PROGRESS_CACHE_KEY = 'scrape_progress';
 const PROGRESS_CACHE_TTL = 21600; // 6h (max autorisé par CacheService)
 
-// Ordre exact des colonnes du Sheet (A -> AE). Ne pas réordonner sans adapter le Sheet.
+// Ordre exact des colonnes du Sheet (A -> AF). Ne pas réordonner sans adapter le Sheet.
 const COLUMNS = [
   'Code Gesthand', 'Catégorie', 'Genre', 'Index', 'Championnat', 'Poule', 'Journée',
   'Eq1', 'Eq1X', 'Date', 'Heure', 'Eq2', 'Eq2X', 'Gymnase', 'Ville',
@@ -59,6 +60,7 @@ const COLUMNS = [
   'PhotoEq', 'Story résultat',
   'INSTA_Cat', 'INSTA_date', 'INSTA_Eq1', 'INSTA_Eq2', 'Insta_Ville',
   'Score Source', // 'ffhb' (confirmé par le scraper, verrouille la saisie manuelle) ou 'manuel'
+  'Commentaire', // texte libre, saisi depuis la page match, jamais verrouillé
 ];
 
 const JOURS_FR = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -80,6 +82,7 @@ function doPost(e) {
       }
       if (p.action === 'add_score') return jsonResponse(updateScore(p));
       if (p.action === 'add_photo') return jsonResponse(addPhoto(p));
+      if (p.action === 'select_photo') return jsonResponse(selectPhoto(p));
       return jsonResponse({ ok: false, error: 'action inconnue: ' + p.action });
     }
 
@@ -102,12 +105,16 @@ function doPost(e) {
   }
 }
 
-// Lecture de la progression (pas d'authentification requise — donnée non sensible,
-// juste des noms d'équipes déjà publics et un numéro de journée).
+// Lecture de la progression / de la galerie photo (pas d'authentification requise — données
+// non sensibles : les photos sont déjà partagées "anyone with link", et le match_id n'a rien
+// de secret).
 function doGet(e) {
   if (e.parameter.action === 'progress') {
     const raw = CacheService.getScriptCache().get(PROGRESS_CACHE_KEY);
     return jsonResponse(raw ? JSON.parse(raw) : null);
+  }
+  if (e.parameter.action === 'list_photos') {
+    return jsonResponse(listPhotos(e.parameter.match_id));
   }
   return jsonResponse({ ok: false, error: 'action inconnue' });
 }
@@ -203,6 +210,9 @@ function upsertMatch(m) {
  * saisie humaine explicite, donc source de vérité la plus récente — SAUF si le score a déjà
  * été confirmé par le scraper FFHB (Score Source='ffhb'), auquel cas la modification
  * manuelle est bloquée (verrou strict ; correction éventuelle directement dans la sheet).
+ * Le commentaire (p.commentaire), lui, reste modifiable même si le score est verrouillé —
+ * la page match envoie donc les champs score_dom/score_ext/winlose UNIQUEMENT quand la
+ * modification du score est autorisée côté client (sinon elle n'envoie que le commentaire).
  */
 function updateScore(p) {
   if (!p.match_id) return { ok: false, error: 'match_id manquant' };
@@ -212,28 +222,35 @@ function updateScore(p) {
 
   const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
   const current = rowRange.getValues()[0];
-  if (current[colIndex('Score Source')] === 'ffhb') {
+  const locked = current[colIndex('Score Source')] === 'ffhb';
+  const wantsScoreChange = p.score_dom !== undefined || p.score_ext !== undefined || p.winlose !== undefined;
+
+  if (locked && wantsScoreChange) {
     return { ok: false, error: 'Score déjà confirmé par la FFHB — modification manuelle bloquée.' };
   }
-  if (p.score_dom !== undefined && p.score_dom !== '') current[colIndex('Eq1Score')] = p.score_dom;
-  if (p.score_ext !== undefined && p.score_ext !== '') current[colIndex('Eq2Score')] = p.score_ext;
-  if (p.winlose) current[colIndex('WinLose')] = p.winlose;
-  current[colIndex('Score Source')] = 'manuel';
+  if (wantsScoreChange) {
+    if (p.score_dom !== undefined && p.score_dom !== '') current[colIndex('Eq1Score')] = p.score_dom;
+    if (p.score_ext !== undefined && p.score_ext !== '') current[colIndex('Eq2Score')] = p.score_ext;
+    if (p.winlose) current[colIndex('WinLose')] = p.winlose;
+    current[colIndex('Score Source')] = 'manuel';
+  }
+  if (p.commentaire !== undefined) current[colIndex('Commentaire')] = p.commentaire;
   rowRange.setValues([current]);
   return { ok: true, action: 'score_updated', row: rowNumber };
 }
 
 /**
- * Formulaire photo de fin de match (remplace les 2 scénarios Make qui uploadaient sur
- * Dropbox sans jamais écrire dans la sheet). Ici on upload sur Drive (dossier dédié par
- * match) et on écrit le lien dans PhotoEq — un envoi ultérieur pour le même match
- * remplace le lien précédent (un seul "photo résultat" attendu par match, cf CLAUDE.md).
+ * Formulaire photo (remplace les 2 scénarios Make qui uploadaient sur Dropbox sans jamais
+ * écrire dans la sheet). Upload sur Drive (dossier dédié par match) — alimente la galerie
+ * de la page match, mais n'écrit PLUS PhotoEq directement : plusieurs photos peuvent
+ * s'accumuler pour un même match, la photo "officielle" (réseaux) est choisie séparément
+ * et explicitement via selectPhoto (sélection manuelle depuis la galerie).
  *
  * La photo arrive en base64 (p.photo_base64 + p.photo_name + p.photo_type), pas en Blob
  * multipart natif : testé en prod, Apps Script ne peuple PAS e.parameter avec un Blob pour
  * un fichier envoyé via un vrai POST multipart/form-data externe (seuls les champs texte
  * arrivent) — contrairement au comportement d'un <input type=file> dans un formulaire
- * HtmlService classique. D'où l'encodage base64 côté client (voir les 2 repos formulaires).
+ * HtmlService classique. D'où l'encodage base64 côté client (voir form-score-club-2-).
  *
  * Nécessite le scope Drive en écriture (pas seulement lecture) : après avoir ajouté ce
  * code, il faut exécuter manuellement une fonction du projet une fois depuis l'éditeur
@@ -256,11 +273,49 @@ function addPhoto(p) {
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const url = 'https://lh3.googleusercontent.com/d/' + file.getId();
 
+  return { ok: true, action: 'photo_added', url: url, fileId: file.getId() };
+}
+
+/**
+ * Marque une photo de la galerie (déjà uploadée via addPhoto) comme LA photo officielle
+ * du match (écrit PhotoEq) — sélection manuelle depuis la page match, jamais automatique.
+ */
+function selectPhoto(p) {
+  if (!p.match_id) return { ok: false, error: 'match_id manquant' };
+  if (!p.photo_url) return { ok: false, error: 'photo_url manquant' };
+  const sheet = getSheet();
+  const rowNumber = findRowByCode(sheet, p.match_id);
+  if (!rowNumber) return { ok: false, error: 'match introuvable: ' + p.match_id };
+
   const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
   const current = rowRange.getValues()[0];
-  current[colIndex('PhotoEq')] = url;
+  current[colIndex('PhotoEq')] = p.photo_url;
   rowRange.setValues([current]);
-  return { ok: true, action: 'photo_added', url: url, row: rowNumber };
+  return { ok: true, action: 'photo_selected', row: rowNumber };
+}
+
+/**
+ * Liste toutes les photos déjà uploadées pour un match (dossier Drive dédié) — alimente la
+ * galerie de la page match. Retourne une liste vide (pas une erreur) si le dossier n'existe
+ * pas encore (aucune photo envoyée pour ce match).
+ */
+function listPhotos(matchId) {
+  if (!matchId) return { ok: false, error: 'match_id manquant' };
+  try {
+    const parentFolder = DriveApp.getFolderById(PHOTOS_FOLDER_ID);
+    const existing = parentFolder.getFoldersByName(String(matchId).trim());
+    if (!existing.hasNext()) return { ok: true, photos: [] };
+    const matchFolder = existing.next();
+    const files = matchFolder.getFiles();
+    const photos = [];
+    while (files.hasNext()) {
+      const f = files.next();
+      photos.push({ id: f.getId(), url: 'https://lh3.googleusercontent.com/d/' + f.getId(), name: f.getName() });
+    }
+    return { ok: true, photos: photos };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
 }
 
 function getOrCreateSubfolder(parent, name) {
