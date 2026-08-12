@@ -33,6 +33,8 @@ from scrape_ffhb import (
     scrape_poule_journees,
     normalize_poule_base_url,
     enrich_salle,
+    sentence_case,
+    strip_postal_code,
     save_if,
 )
 
@@ -219,9 +221,14 @@ def load_club_salle_cache(outdir: str) -> dict:
         gymnase = str(row.get("gymnase", "") or "").strip()
         lien = str(row.get("lien", "") or "").strip()
         if lien and score and gymnase:
+            # Réapplique la mise en forme (sentence case + retrait code postal) sur les
+            # valeurs relues du cache : les rattrape automatiquement au run suivant si elles
+            # avaient été scrapées avant l'ajout de ce nettoyage, sans script de migration à part.
+            gymnase = sentence_case(gymnase)
+            ville = sentence_case(strip_postal_code(str(row.get("ville", "") or "")))
             cache[lien] = {
                 "gymnase": gymnase,
-                "ville": str(row.get("ville", "") or ""),
+                "ville": ville,
                 "adresse_complete": str(row.get("adresse_complete", "") or ""),
             }
     return cache
