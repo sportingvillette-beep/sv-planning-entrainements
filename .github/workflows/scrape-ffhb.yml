@@ -2,14 +2,24 @@ name: Scrape FFHB
 
 on:
   schedule:
-    # Tous les soirs à ~2h du matin (heure de Paris). GitHub Actions n'évalue les
+    # Tous les soirs à ~1h13 du matin heure de Paris. GitHub Actions n'évalue les
     # cron que sur la branche par défaut (main) — ce déclenchement automatique ne
-    # démarrera donc qu'une fois ce workflow mergé sur main.
-    # Le cron GitHub Actions est en UTC sans gestion du changement d'heure : 1h00 UTC
-    # correspond à 2h00 (hiver, CET) ou 3h00 (été, CEST) heure de Paris — couvre
-    # aussi le week-end (les matchs du dimanche sont scrapés dans la nuit de
-    # dimanche à lundi, remplace l'ancien cron hebdomadaire du dimanche soir).
-    - cron: "0 1 * * *"
+    # démarrera donc qu'une fois ce workflow mergé sur main. Couvre aussi le
+    # week-end (les matchs du dimanche sont scrapés dans la nuit de dimanche à
+    # lundi, remplace l'ancien cron hebdomadaire du dimanche soir).
+    #
+    # GitHub Actions n'a pas de notion de fuseau horaire (cron toujours en UTC) :
+    # 2 cron, un par saison, pour viser ~1h13 heure de Paris été comme hiver.
+    # Découpage par mois entier (pas par date exacte de changement d'heure) : ~1
+    # semaine de décalage d'1h autour des 2 transitions annuelles (fin mars, fin
+    # octobre), négligeable pour ce cron de rafraîchissement de données.
+    #
+    # Minute décalée à :13 (pas :00) : GitHub documente que les cron se déclenchant
+    # pile à l'heure ronde subissent plus de retard (file d'attente saturée par tous
+    # les cron programmés au même instant sur GitHub) — déjà observé en pratique
+    # (run programmé à 1h00 UTC démarré avec ~2h30 de retard).
+    - cron: "13 0 * 11,12,1,2,3 *"     # nov-mars : 0h13 UTC = ~1h13 CET (hiver, UTC+1)
+    - cron: "13 23 * 4,5,6,7,8,9,10 *" # avr-oct : 23h13 UTC = ~1h13 CEST (été, UTC+2)
   workflow_dispatch:
     inputs:
       teams:
