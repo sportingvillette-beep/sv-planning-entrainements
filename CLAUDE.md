@@ -7,10 +7,41 @@ hébergée sur **GitHub Pages**. Elle lit ses données en direct depuis un
 Google Sheet publié en CSV, et génère plusieurs documents (plannings
 d'entraînement, "Team Book") entièrement côté navigateur. Elle affiche aussi
 le calendrier/résultats FFHB du club, scrapés côté CI (voir section dédiée
-plus bas) — le seul morceau du projet qui n'est pas 100% client-side.
+plus bas). Un **Web App Google Apps Script** (`apps-script/Code.gs`) sert de
+seul point d'écriture vers la sheet "Matchs" partagée avec 2 autres repos
+(saisie score/photo en direct pendant les matchs) — voir section dédiée.
 
-Ce fichier a été rédigé pour transférer le contexte d'un travail fait avec
-Claude (claude.ai) vers Claude Code, qui reprend la suite du développement.
+Ce fichier est la **source de vérité pour transférer le contexte entre
+sessions Claude Code** (le projet est repris régulièrement dans de nouvelles
+conversations/contextes). À chaque nouvelle session : lire ce fichier en
+entier avant de commencer, `git pull origin main` d'abord.
+
+## Prochaine étape demandée par Julien (au moment de la rédaction)
+
+**Explorer l'exploitation des données de la sheet "Matchs" dans d'autres
+outils : Canva, SportsRégions, etc.** — pas encore commencé. Contexte utile
+déjà en place :
+- Les colonnes `INSTA_Cat`/`INSTA_date`/`INSTA_Eq1`/`INSTA_Eq2`/`Insta_Ville`
+  existent déjà dans la sheet, remplies automatiquement à la création de
+  chaque ligne de match par le scraper — pensées à l'origine comme aide pour
+  un futur Canva Bulk Create (import CSV dans Canva pour générer un visuel
+  par match). Jamais utilisées/testées côté Canva pour de vrai.
+- `PhotoEq` contient le lien de la photo "officielle" d'un match (voir
+  section "Page match" plus bas) — probablement la donnée la plus utile à
+  pousser vers Canva pour un visuel de résultat.
+- `Commentaire` (nouvelle colonne, voir plus bas) pourrait alimenter un texte
+  de légende.
+- Rien n'a été fait côté API Canva (pas de compte/clé testés dans ce repo).
+  Le compte est un compte Canva Pro associatif de Julien.
+- **SportsRégions** = le CMS du site officiel du club, déjà mentionné dans
+  "Leçons apprises" ci-dessous (éditeur qui filtre le CSS collé, d'où
+  `renderEquipeMinimal`). Pas d'API connue pour l'instant — à voir si
+  SportsRégions expose quoi que ce soit d'automatisable ou si ça reste du
+  copier-coller HTML manuel.
+- Piste à creuser avec Julien avant de coder quoi que ce soit : quel usage
+  concret veut-il (auto-poster sur Instagram via Canva ? générer un visuel
+  que lui poste manuellement, comme déjà décidé pour l'étape Canva du
+  roadmap ci-dessous ? alimenter SportsRégions automatiquement ?).
 
 ## Hébergement
 
@@ -20,26 +51,44 @@ Claude (claude.ai) vers Claude Code, qui reprend la suite du développement.
 - **Important** : l'app fait des `fetch()` vers Google Sheets. Ces requêtes
   échouent si le fichier est ouvert en local (`file://...`) à cause de
   restrictions CORS/navigateur — il faut toujours tester via l'URL GitHub
-  Pages ci-dessus, jamais en double-cliquant sur le fichier téléchargé.
+  Pages ci-dessus (ou un serveur HTTP local, `python -m http.server`), jamais
+  en double-cliquant sur le fichier téléchargé.
+
+## Workflow de collaboration avec Julien
+
+**Une branche par fonctionnalité, test local avant de pousser, PR ouverte,
+et Julien donne un "ON MERGE" explicite avant toute fusion sur `main`** —
+jamais de merge sans ce feu vert, même pour un correctif mineur. Une fois
+mergé, supprimer la branche (locale + distante). Ce pattern s'applique aux
+3 repos du projet (`sv-planning-entrainements`, `form-score-club-2-`,
+`form-score-club-photo-only`).
+
+`gh` (GitHub CLI) n'est pas installé dans l'environnement — utiliser `git`
+directement (checkout branche, commit, push, puis merge local de `main` +
+push une fois le "ON MERGE" reçu ; ouvrir la PR se fait juste en donnant le
+lien `.../pull/new/<branche>` généré par le push, pas besoin de la créer
+via API).
 
 ## Source de données
 
-- Google Sheet (édition) : `https://docs.google.com/spreadsheets/d/1viw-QLYXpA4jNV_bHhfCsBtJ8ueaC0ujXfqtPPpIAq0/edit?usp=sharing`
+- Google Sheet équipes (édition) : `https://docs.google.com/spreadsheets/d/1viw-QLYXpA4jNV_bHhfCsBtJ8ueaC0ujXfqtPPpIAq0/edit?usp=sharing`
 - Export CSV publié (utilisé par l'app, `Fichier > Partager > Publier sur le
   web > CSV`) :
   `https://docs.google.com/spreadsheets/d/e/2PACX-1vT3RqA-z8ANNaXXsYMgh4ynk8LV4EjOnkAqyThzFQ4TcxIUofmVlWg20wyfw-ZmeDettPCjkCgank_3/pub?output=csv`
 - Onglet source : `Synthèse`
-- **Bug ouvert / à investiguer** : le lien CSV répond correctement en
-  `curl`/fetch serveur, mais un utilisateur a récemment eu une erreur
-  `Failed to fetch` côté navigateur. Ce lien `pub?output=csv` fait une
-  redirection 302 vers un hôte `doc-XX-XX-sheets.googleusercontent.com` —
-  suspect principal : absence d'en-tête `Access-Control-Allow-Origin` sur la
-  réponse finale après redirection dans certains cas (comportement Google
-  possiblement inconsistant). À vérifier avant de conclure — pourrait aussi
-  être un simple problème de test en `file://` (voir point ci-dessus) ou de
-  cache GitHub Pages pas encore à jour.
+- Google Sheet "Com matchs réseaux" (matchs, onglet `Matchs`) : lue/écrite
+  par le scraper + les formulaires club — voir section dédiée plus bas pour
+  le détail des colonnes et du Web App qui l'écrit.
+- **Piège connu, déjà rencontré plusieurs fois** : le CSV **publié** (les
+  deux liens ci-dessus, et celui de la sheet Matchs) a un **délai de cache
+  côté Google** après une écriture (observé de quelques secondes à ~15-20s,
+  parfois plus) — une donnée qui vient d'être écrite via Apps Script peut ne
+  pas apparaître immédiatement dans le CSV publié que lit le front. Ce n'est
+  pas un bug de notre code : la sheet elle-même est à jour immédiatement,
+  seul le CSV publié traîne. Ne pas chercher à "corriger" ça côté client
+  au-delà d'un message d'attente/retry raisonnable.
 
-### Colonnes du CSV (une ligne = une équipe)
+### Colonnes du CSV équipes (une ligne = une équipe)
 
 ```
 Section, Indice équipe, Categorie, Années de naissance, Prix_Licence, Genre,
@@ -59,10 +108,7 @@ P2.Niveau, P2.Lien, P2.Poule    (Phase 2, souvent vide en début de saison)
   données, il sera silencieusement ignoré par les vues planning : à corriger
   si besoin en étendant le tableau `DAYS`).
 - `P1.Lien` / `P2.Lien` sont des URLs vers des pages de poule sur
-  `ffhandball.fr`, ex. :
-  `https://www.ffhandball.fr/competitions/saison-2026-2027-22/regional/m18-ans-feminin-excellence-aura-30507/poule-190314/`
-  — ces liens sont la base de la prochaine fonctionnalité (scraper FFHB, voir
-  plus bas).
+  `ffhandball.fr`, base du scraper FFHB (voir plus bas).
 
 ### 4 ententes/sections (valeurs exactes de la colonne `Section`)
 
@@ -102,7 +148,10 @@ Couleurs associées (utilisées comme code couleur dans les vues) :
 Fichier unique, pas de build, pas de dépendance externe (pas de CDN, pas de
 librairie JS tierce). Structure interne :
 
-1. **UI** (thème sombre) : boutons d'action, zone de résultat, statut.
+1. **UI** (thème sombre). Les panneaux d'action sont groupés par paires côte
+   à côte (`.panel-row`, empilées sous 720px) : "Bases de données" +
+   "Outils externes" (liens vers les 2 formulaires de saisie club et le repo
+   GitHub), puis "Générer planning" + "Team Book".
 2. **Logique de données** (fonctions `parseCSV`, `buildRecords`,
    `mergeRecords`, `finalLabel`) : parse le CSV en enregistrements par équipe,
    fusionne les lignes qui ont un horaire strictement identique (ex. deux
@@ -134,11 +183,22 @@ librairie JS tierce). Structure interne :
    `@page` par vue pour forcer le bon format/orientation. L'utilisateur
    choisit "Enregistrer en PDF" dans la boîte de dialogue d'impression du
    navigateur.
+5. **Vues calendrier/résultats FFHB** (`renderFFHBTable`, week-end par
+   week-end, et `renderCalendrierCompletTable`, calendrier complet d'une
+   équipe dans "Situation d'une équipe") — même présentation dans les deux
+   vues : colonnes `Équipe` (uniquement dans la vue week-end) / `Classement`
+   (`"3e vs 1er"`, rang domicile vs rang extérieur dans la poule, pas
+   `"rang/nb équipes"`) / `Date` (`"samedi 19 ou dimanche 20 septembre"` si
+   pas encore confirmée par FFHB, sinon la date exacte + heure) / `Dom/Ext`
+   / `Adversaire` (nom nettoyé, cf `cleanOpponentLabel` : retire le préfixe
+   type poule `"M16F EXC - "` et isole un indice d'équipe en suffixe type
+   `"- 1"`) / `Score` / `Lieu`. Logique de classement/nettoyage partagée via
+   `findPosInPoule`, `ordinalFr`, `cleanOpponentLabel`, `attachClassementLabels`.
 
 ## Leçons apprises (à ne pas refaire)
 
 - **`file://` casse les `fetch()`** vers Google Sheets → toujours tester via
-  l'URL GitHub Pages, jamais en local.
+  l'URL GitHub Pages ou un serveur local, jamais en `file://`.
 - **Google Drive n'exécute pas le HTML/JS** — un fichier `.html` déposé dans
   Drive ne fonctionne pas comme une page web, juste comme un fichier stocké.
 - **`html2pdf.js` (rasterisation canvas) est peu fiable** : testé et
@@ -146,7 +206,10 @@ librairie JS tierce). Structure interne :
   mauvais calcul d'échelle canvas→PDF) et texte rendu en image (flou, non
   sélectionnable). Le rendu natif du navigateur (`window.print()` +
   `@media print` + `@page`) donne un résultat vectoriel fiable et est la
-  méthode à privilégier pour tout futur export PDF.
+  méthode à privilégier pour tout futur export PDF (y compris pour un futur
+  export PDF **automatisé côté CI** : Playwright sait aussi imprimer en PDF
+  sans navigateur interactif, cf `page.pdf()` — piste pour le "résumé
+  hebdomadaire" du roadmap plus bas, pas encore construit).
 - **Éditeurs CMS tiers (SportsRégions) filtrent le CSS** collé dans leurs
   champs de texte enrichi : ils ne gardent souvent que `color` et
   `background-color`, suppriment `display`, `font-weight`, `padding`,
@@ -161,20 +224,86 @@ librairie JS tierce). Structure interne :
   impératif en `@media print` (`max-height:none; overflow:visible;`) sinon
   l'impression tronque le contenu à la hauteur visible à l'écran.
 
+### Leçons Google Apps Script (Web App `apps-script/Code.gs`)
+
+- **`e.postData` n'est pas peuplé de façon fiable pour une requête
+  multipart/form-data** envoyée par un vrai client externe (`fetch`/`FormData`,
+  pas un formulaire HtmlService) — `e.postData.contents` peut être
+  `undefined`, faisant planter un `JSON.parse` fait sans précaution. `doPost`
+  ne doit tenter le parsing JSON que si `e.postData && e.postData.type ===
+  'application/json'` explicitement ; tout le reste passe par `e.parameter`
+  (champs de formulaire).
+- **Un fichier envoyé en multipart/form-data externe n'arrive PAS en `Blob`
+  dans `e.parameter`**, contrairement au comportement d'un `<input
+  type=file>` dans un vrai formulaire HtmlService. Testé et confirmé en
+  prod (action `debug_echo`, retirée depuis) : seuls les champs texte
+  arrivent. La photo doit donc être encodée en **base64 côté client**
+  (`photo_base64` + `photo_name` + `photo_type`) et redécodée côté serveur
+  avec `Utilities.base64Decode` + `Utilities.newBlob`.
+- **Ajouter un nouveau service (`DriveApp`, etc.) à un Web App déjà déployé
+  nécessite une autorisation manuelle** : exécuter n'importe quelle fonction
+  du projet une fois depuis l'éditeur Apps Script (bouton "Exécuter") pour
+  déclencher l'écran de consentement, à valider avec le compte propriétaire
+  de la sheet. Sans ça, le Web App déployé échoue silencieusement avec
+  `"Vous n'êtes pas autorisé à appeler DriveApp..."`, même après un
+  redéploiement. La lecture (`getFolderById`) et l'écriture
+  (`createFolder`/`createFile`/`setSharing`) sont des **scopes distincts** :
+  un test qui ne fait que lire ne garantit pas que l'écriture est autorisée.
+- **"Nouvelle version" ≠ "Nouveau déploiement"** : après toute modification
+  de `Code.gs` déjà en prod, utiliser Déployer > Gérer les déploiements >
+  éditer (crayon) > **Nouvelle version** — jamais "Nouveau déploiement",
+  qui changerait l'URL `/exec` et casserait tout ce qui la référence en dur
+  (scraper, site, formulaires). Voir instructions détaillées en tête de
+  `Code.gs`.
+- **Le répertoire de travail local reflète la branche git extraite au
+  moment où on regarde `apps-script/Code.gs`** — si une session Claude Code
+  a laissé le repo sur `main` après avoir poussé une feature branche pas
+  encore mergée, Julien qui recopie "le fichier du répertoire" pour le coller
+  dans l'éditeur Apps Script récupère l'ancienne version sans le savoir, et
+  un redéploiement ne change rien de visible. Piège déjà tombé dedans une
+  fois. Réflexe : si un comportement censé être nouveau ne se manifeste pas
+  après un redéploiement confirmé, vérifier `git branch --show-current` +
+  `grep` d'une chaîne caractéristique du nouveau code dans le fichier avant
+  de chercher ailleurs.
+- **Le Web App répond parfois avec une latence/erreur transitoire** (redirection
+  interne `script.googleusercontent.com` qui échoue ponctuellement, page
+  d'erreur Google Drive générique "Impossible d'ouvrir le fichier", ou
+  `secret invalide` alors que le secret est confirmé identique des deux
+  côtés) — observé de façon répétée et aléatoire tout au long du
+  développement, sur toutes les actions (`add_match`, `add_score`,
+  `add_photo`, `list_photos`...), résolu à chaque fois par un simple retry
+  quelques secondes après. Ce n'est pas un bug de code identifié : traiter
+  comme une flakiness d'infrastructure Google à absorber par retry (2-3
+  tentatives, ~1,5s d'écart) plutôt qu'à "corriger". Le front (`form-score-club-2-`)
+  a maintenant ce retry intégré sur `list_photos`/`add_photo`/`select_photo`
+  (voir section dédiée) — pattern à reprendre pour toute nouvelle action.
+- **GitHub Actions retarde les `schedule:` programmés pile à l'heure ronde**
+  (`:00`) — file d'attente saturée par tous les cron du même instant sur
+  toute la plateforme, documenté par GitHub. Confirmé en prod : un cron à
+  1h00 UTC pile a démarré avec ~2h30 de retard. Toujours décaler la minute
+  (ex. `:13`) pour un cron sensible au timing.
+- **Le cron GitHub Actions n'a pas de notion de fuseau horaire** (toujours
+  UTC) — pour viser une heure locale française fixe toute l'année, il faut
+  2 entrées `cron:` (une par saison CET/CEST), découpées par mois entier
+  plutôt que par date exacte de changement d'heure (~1 semaine de décalage
+  d'1h autour des 2 transitions annuelles, négligeable pour un cron de
+  rafraîchissement de données). Voir `.github/workflows/scrape-ffhb.yml`.
+
 ## Scraper FFHB (calendrier / résultats / classements)
 
-Implémenté comme prévu ci-dessus dans la version précédente de ce fichier :
-**pas de scraping côté navigateur** (CORS + Playwright indisponible dans un
-onglet), mais un scraping côté CI (GitHub Actions) qui commite des fichiers
+Pas de scraping côté navigateur (CORS + Playwright indisponible dans un
+onglet) : scraping côté CI (GitHub Actions) qui commite des fichiers
 statiques que `index.html` lit en `fetch()` same-origin, exactement comme il
-lit déjà le Google Sheet.
+lit déjà le Google Sheet. Écrit aussi directement dans la sheet "Matchs"
+(voir section dédiée plus bas).
 
 ### Fichiers
 
 - `scraper/scrape_ffhb.py` — briques de scraping réutilisables (Playwright +
   BeautifulSoup) : parcours des journées d'une poule FFHB, extraction
   calendrier/scores/classement, extraction gymnase/ville sur la page de
-  détail d'un match. Utilisable aussi en CLI interactif en local
+  détail d'un match (`extract_salle`, `sentence_case`, `strip_postal_code`,
+  voir ci-dessous). Utilisable aussi en CLI interactif en local
   (`python scrape_ffhb.py`) indépendamment du club — mono-poule/mono-équipe.
 - `scraper/scrape_ffhb_club.py` — orchestrateur multi-équipes club. Deux
   modes :
@@ -192,8 +321,28 @@ lit déjà le Google Sheet.
   `section/indice/categorie/phase` en tête. Lues par `index.html`.
 - `data/last_update.json` — `{ derniere_maj, mode, equipes_rafraichies,
   erreurs }`, affiché dans l'UI.
-- `.github/workflows/scrape-ffhb.yml` — cron dimanche soir +
-  `workflow_dispatch` (input `teams`, IDs séparés par virgules, vide = tout).
+- `.github/workflows/scrape-ffhb.yml` — cron (voir "Cron et fuseau horaire"
+  ci-dessous) + `workflow_dispatch` (input `teams`, IDs séparés par
+  virgules, vide = tout).
+
+### Nettoyage Gymnase/Ville (sentence case + retrait code postal)
+
+FFHB affiche ces deux champs tout en majuscules, avec le code postal en
+préfixe pour la ville (ex. `"69740 GENAS"`, `"HALLE DES SPORTS"`). Deux
+fonctions dans `scrape_ffhb.py` :
+- `strip_postal_code(ville)` — retire un `"NNNNN "` en préfixe.
+- `sentence_case(s)` — majuscule initiale seulement (reste en minuscules),
+  y compris après un tiret ou une apostrophe (ex. `"VILLETTE D'ANTHON"` →
+  `"Villette d'Anthon"`, `"SAINT-PRIEST"` → `"Saint-Priest"`) — heuristique
+  best-effort sur les libellés observés, peut nécessiter un ajustement sur
+  un cas non encore vu.
+
+Appliqué à la fois à l'extraction fraîche (`extract_salle`) et à la
+relecture du **cache** (`load_salle_cache` / `load_club_salle_cache`, qui
+réutilisent gymnase/ville des matchs déjà joués sans re-scraper leur page
+détail, cf ci-dessous) — les valeurs déjà scrapées avant l'ajout de ce
+nettoyage se corrigent donc automatiquement au run suivant, sans script de
+migration à part.
 
 ### Piège important : le "club porteur" d'une entente
 
@@ -223,22 +372,19 @@ disparaître les données des équipes non sélectionnées.
 
 GitHub Actions n'évalue les triggers `schedule:` que sur la **branche par
 défaut** (`main`) — le cron ne tournera qu'une fois ce workflow mergé, pas
-sur une branche de feature. Remplace l'ancien cron hebdomadaire du dimanche
-soir : un run quotidien couvre déjà le week-end (matchs du dimanche scrapés
-dans la nuit de dimanche à lundi) et garde aussi les données fraîches en
-semaine.
+sur une branche de feature.
 
-Le cron GitHub Actions n'a pas de notion de fuseau horaire (toujours en
-UTC) : pour viser ~1h13 heure de Paris toute l'année, il y a **2 cron**
-dans le workflow, un par saison (`13 0 * 11,12,1,2,3 *` nov-mars = 0h13
-UTC = ~1h13 CET ; `13 23 * 4,5,6,7,8,9,10 *` avr-oct = 23h13 UTC = ~1h13
-CEST), découpés par mois entier plutôt que par date exacte de changement
-d'heure — ~1 semaine de décalage d'1h autour des 2 transitions annuelles
-(fin mars, fin octobre), négligeable ici. Minute décalée à `:13` (pas
-`:00`) : GitHub documente que les cron programmés pile à l'heure ronde
-subissent plus de retard (file d'attente saturée par tous les cron du même
-instant) — confirmé en pratique, un run programmé à 1h00 UTC pile avait
-démarré avec ~2h30 de retard.
+Cron quotidien (couvre le week-end : matchs du dimanche scrapés dans la nuit
+de dimanche à lundi), visant ~1h13 heure de Paris toute l'année via **2
+entrées `cron:` saisonnières** dans le workflow (GitHub Actions n'a pas de
+notion de fuseau horaire) :
+- `13 0 * 11,12,1,2,3 *` (nov-mars, 0h13 UTC = ~1h13 CET)
+- `13 23 * 4,5,6,7,8,9,10 *` (avr-oct, 23h13 UTC = ~1h13 CEST)
+
+Découpage par mois entier plutôt que par date exacte de changement d'heure
+(~1 semaine de décalage d'1h autour des 2 transitions annuelles, négligeable
+ici). Minute décalée à `:13` (pas `:00`) pour éviter la contention de la
+file d'attente GitHub au pile-hh:00 — voir leçon dédiée plus haut.
 
 ### Rafraîchissement manuel depuis l'UI
 
@@ -248,10 +394,7 @@ directement l'API GitHub (`POST
 navigateur, avec un jeton **fine-grained PAT stocké en `localStorage`**
 (jamais commité, jamais envoyé ailleurs qu'à `api.github.com`). Chaque
 admin doit créer son propre jeton une fois par appareil (scope minimal :
-`Actions: Read and write` sur ce repo uniquement). Confirmé fonctionnel :
-l'API GitHub répond bien en CORS à un `fetch()` cross-origin authentifié par
-`Authorization: Bearer <token>` (testé avec un faux jeton → 401 propre, pas
-d'erreur CORS bloquante).
+`Actions: Read and write` sur ce repo uniquement).
 
 ### Barre de progression du rafraîchissement (équipe par équipe)
 
@@ -279,37 +422,49 @@ créneau de l'équipe dans la barre :
 Un `started_at` (posé une fois par run) est comparé côté client au moment
 du déclenchement pour ignorer une progression laissée par un run précédent
 (sinon un `done:true` périmé stopperait le sondage immédiatement). Filet de
-sécurité : arrêt du sondage après 90 min (relevé de 15 min — un run peut
-prendre plus longtemps que prévu en tout début de saison, sur les poules
-avec beaucoup de journées à parcourir).
+sécurité : arrêt du sondage après 90 min (un run peut prendre longtemps en
+tout début de saison, sur les poules avec beaucoup de journées à parcourir).
 
-## Synchronisation vers la sheet "Matchs" (remplace le copier-coller manuel)
+## Web App Apps Script (`apps-script/Code.gs`) — point d'écriture unique
 
-Historique : Julien copiait manuellement le résultat d'un ancêtre du scraper
-dans le Google Sheet "Matchs" (`Com matchs réseaux`, celui que lisent
-`form-score-club*` — voir plus bas). Le scraper FFHB **écrit maintenant
-directement** dans cette sheet à chaque run (upsert par match), sans
-supprimer la possibilité d'ajouter des matchs à la main (amicaux/tournois
-absents de la FFHB) — les deux modes de saisie coexistent.
+Un seul Web App lié à la sheet "Com matchs réseaux" (onglet `Matchs`),
+partagé par le scraper (ce repo) et les formulaires club
+(`form-score-club-2-`). **Doit être collé à la main dans l'éditeur Apps
+Script de la sheet et déployé par Julien** (Claude Code n'a pas d'accès à
+son compte Google) — instructions détaillées en tête de `Code.gs`, y compris
+l'étape d'autorisation Drive (voir leçons ci-dessus).
 
-### Écriture via un Web App Apps Script (pas d'API Google côté scraper)
+Deux secrets distincts (défense en profondeur — si le JS public du
+formulaire fuite, ça ne compromet pas le secret du scraper) :
+- `SHARED_SECRET` — scraper uniquement (GitHub Actions, jamais exposé
+  publiquement). Utilisé pour les requêtes **JSON** (`doPost` route vers ce
+  chemin uniquement si `e.postData.type === 'application/json'`).
+- `FORM_SHARED_SECRET` — formulaires club (JS public). Utilisé pour toutes
+  les requêtes **multipart/form-data** (`e.parameter`).
 
-`apps-script/Code.gs` est un Web App unique lié à la sheet "Matchs" : le
-scraper (GitHub Actions) lui POST un JSON par match (`action: "add_match"`),
-protégé par un secret partagé (`SHARED_SECRET` dans le script =
-`SHEET_WEBAPP_SECRET` côté GitHub). Choix déjà fait pour remplacer
-Make.com sur les formulaires score/photo — même Web App, même point
-d'entrée unique pour toute écriture dans la sheet, à étendre plus tard.
-**Ce script doit être collé à la main dans l'éditeur Apps Script de la
-sheet et déployé par Julien** (Claude Code n'a pas d'accès à son compte
-Google) — voir les instructions en tête de `Code.gs`.
+### Actions disponibles
 
-Côté Python (`scrape_ffhb_club.py`) : `SHEET_WEBAPP_URL` /
-`SHEET_WEBAPP_SECRET` sont lues en variables d'environnement
-(`post_match_to_sheet`) — **no-op silencieux si absentes**, donc sûr de
-merger/tester avant que le Web App soit réellement déployé.
+| Action | Méthode | Secret | Description |
+|---|---|---|---|
+| `add_match` | POST JSON | `SHARED_SECRET` | Upsert d'un match par le scraper (voir mapping des colonnes ci-dessous). |
+| `progress` | POST JSON | `SHARED_SECRET` | Pousse la progression du scraping en cache éphémère (voir barre de progression). |
+| `progress` | GET | aucun | Lit la progression (donnée non sensible). |
+| `add_score` | POST multipart | `FORM_SHARED_SECRET` | Écrit `Eq1Score`/`Eq2Score`/`WinLose` (sauf si verrouillé, cf `Score Source`) et/ou `Commentaire` (jamais verrouillé) — champs `score_dom`/`score_ext`/`winlose` **omis par le client** si le score est verrouillé, pour n'envoyer que le commentaire. |
+| `add_photo` | POST multipart | `FORM_SHARED_SECRET` | Upload une photo (base64, voir leçon dédiée) dans le dossier Drive du match — **n'écrit plus `PhotoEq`** (alimente juste la galerie). |
+| `select_photo` | POST multipart | `FORM_SHARED_SECRET` | Marque une photo déjà uploadée comme *la* photo officielle (écrit `PhotoEq`) — sélection manuelle uniquement, jamais automatique. |
+| `list_photos` | GET | aucun | Liste toutes les photos du dossier Drive d'un match (donnée non sensible, déjà partagée "anyone with link"). |
 
-### Mapping des colonnes (voir `build_match_payload` dans scrape_ffhb_club.py)
+### Colonnes de la sheet "Matchs" (ordre exact, A → AF)
+
+```
+Code Gesthand, Catégorie, Genre, Index, Championnat, Poule, Journée,
+Eq1, Eq1X, Date, Heure, Eq2, Eq2X, Gymnase, Ville,
+Eq1Score, Eq2Score, WinLose,
+Story Insta, Get Story, Story avant match, Publier Story, Lien Story,
+PhotoEq, Story résultat,
+INSTA_Cat, INSTA_date, INSTA_Eq1, INSTA_Eq2, Insta_Ville,
+Score Source, Commentaire
+```
 
 - `Code Gesthand` = l'ID FFHB (`rencontre-XXXXXXX`, extrait du lien scrapé)
   pour les matchs venant du scraper. Les matchs ajoutés à la main gardent le
@@ -318,95 +473,133 @@ merger/tester avant que le Web App soit réellement déployé.
   lui-même).
 - `Eq1`/`Eq2` : le côté qui est nous reçoit le nom de section du club (propre,
   ex. `Entente Villette Genas`) + `Eq1X`/`Eq2X` = notre `indice` (A/B/C...,
-  vide si l'équipe est seule dans sa catégorie — cf discussion avec Julien).
-  Le côté adverse reçoit le nom FFHB brut (souvent un peu bruité, ex. `M18F
-  EXC - ENTENTE LYON EST HANDBALL - 1`) ; `split_trailing_index()` tente d'en
-  extraire un indice en suffixe (` - 1`, ` 2`...) quand il y en a un.
+  vide si l'équipe est seule dans sa catégorie). Le côté adverse reçoit le
+  nom FFHB brut (souvent un peu bruité, ex. `M18F EXC - ENTENTE LYON EST
+  HANDBALL - 1`) ; `split_trailing_index()` (Python, scraper) tente d'en
+  extraire un indice en suffixe (` - 1`, ` 2`...) quand il y en a un —
+  **note** : cette fonction ne nettoie que l'indice, pas le préfixe de
+  poule ; le nettoyage complet (préfixe + indice) affiché côté site utilise
+  `cleanOpponentLabel` en JS (`index.html`), une logique distincte non
+  répercutée dans la sheet elle-même.
 - `Date`/`Heure` ne sont écrites **que si FFHB a confirmé la date** (présence
   de l'heure dans le texte scrapé) — jamais une date approximative/plage.
-- `Eq1Score`/`Eq2Score`/`WinLose` : seulement si FFHB affiche un score.
-  `WinLose` est calculé du point de vue du club (Victoire/Défaite/Match Nul),
-  pas juste "qui a gagné dans l'absolu".
-- `Story*`/`PhotoEq` (pilotage de publication, hérité du flux Make
-  actuellement manuel) : **jamais touchées** par le scraper, ni à la
-  création ni à la mise à jour — en dehors de son périmètre.
+- `Eq1Score`/`Eq2Score`/`WinLose` : par le scraper, seulement si FFHB
+  affiche un score (`WinLose` calculé du point de vue du club :
+  Victoire/Défaite/Match Nul, pas juste "qui a gagné dans l'absolu") ; par le
+  formulaire club, à chaque saisie tant que non verrouillé (voir `Score
+  Source`). Le scraper marque aussi `Score Source='ffhb'` dès qu'il écrit un
+  score — **verrouille alors la saisie manuelle** côté formulaire
+  (`updateScore` refuse toute modification de score, correction éventuelle
+  directement dans la sheet). Le formulaire manuel marque `Score
+  Source='manuel'`.
+- `PhotoEq` : lien de la photo "officielle" (réseaux) — écrit uniquement par
+  `select_photo` (sélection manuelle depuis la page match), plus par
+  `add_photo` directement.
+- `Commentaire` : texte libre saisi depuis la page match, jamais verrouillé
+  même si le score l'est.
+- `Story*`/`Story résultat` (pilotage de publication, hérité d'un ancien
+  flux Make) : **jamais touchées** par le scraper ni par les actions
+  ci-dessus — en dehors de leur périmètre, mécanisme de remplissage réel non
+  identifié.
 - `INSTA_Cat`/`INSTA_date`/`INSTA_Eq1`/`INSTA_Eq2`/`Insta_Ville` : remplies
-  **uniquement à la création** de la ligne (aide pour un futur Canva Bulk
-  Create), jamais réécrites ensuite.
+  **uniquement à la création** de la ligne par le scraper (pensées à
+  l'origine pour un futur Canva Bulk Create), jamais réécrites ensuite —
+  voir "Prochaine étape" en tête de ce fichier.
 
-### Écosystème plus large (contexte, pas construit ici)
+### Historique : migration depuis Make.com (terminée)
 
-Le club a 3 autres repos (`form-score-club`, `form-score-club-2-`,
-`form-score-club-photo-only`) qui lisent/écrivent cette même sheet "Matchs"
-via des scénarios Make.com (score en direct pendant le match, photo de fin
-de match archivée sur Dropbox). `form-score-club/Claude.md` décrit un plan
-plus large (bascule vers Supabase, dashboard, PWA) resté au stade de la
-session 1/6. Objectif à terme évoqué avec Julien : remplacer aussi ces
-scénarios Make par le même Web App Apps Script (pas fait dans cette
-itération — seule l'écriture des matchs scrapés est en place).
+Le club utilisait 3 repos (`form-score-club`, `form-score-club-2-`,
+`form-score-club-photo-only`) pilotés par des scénarios Make.com + stockage
+Dropbox pour la saisie score/photo en direct. **Cette migration est
+terminée** : `form-score-club-2-` utilise maintenant exclusivement ce Web
+App (voir section dédiée plus bas), Make.com et Dropbox ne sont plus
+utilisés pour ce flux. `form-score-club-photo-only` est **retiré**
+(fonctionnalité absorbée par la page match unifiée) — repo laissé tel quel
+sur GitHub mais plus lié depuis le site, plus maintenu.
+`form-score-club` (plan Supabase/dashboard/PWA plus large, resté au stade
+"session 1/6") reste un chantier séparé, sans lien avec ce qui précède, pas
+touché dans ce projet.
 
-### Logique exacte des scénarios Make.com à remplacer (reverse-engineered)
+## `form-score-club-2-` — saisie score/photo/commentaire en direct
 
-Julien a exporté les 2 blueprints Make (JSON) pour ces deux formulaires — voici
-ce qu'ils font vraiment, pour implémenter la suite fidèlement dans le même
-Web App Apps Script (`apps-script/Code.gs`) plutôt que de deviner :
+Repo séparé : `sportingvillette-beep/form-score-club-2-`, même workflow de
+collaboration (branche/PR/"ON MERGE"). Hébergé sur GitHub Pages :
+`https://sportingvillette-beep.github.io/form-score-club-2-/`. Fichier
+unique `index.html`, même philosophie que `sv-planning-entrainements`
+(pas de build, pas de dépendance externe).
 
-**Scénario "Formulaire nouveau score"** (webhook hook `2994327`, appelé par
-`form-score-club-2-` à la soumission du score) :
-- Reçoit `match_id, etat_match, score_dom, score_ext, temps_jeu, statut,
-  WinLose, equipe1_label, equipe2_label`.
-- Cherche la ligne `Code Gesthand == match_id` dans la sheet `Matchs`.
-- Route "sans photo" (le cas normal) : écrit `Eq1Score`/`Eq2Score`/`WinLose`.
-- Route "avec `photo_finale`" : upload la photo sur Dropbox
-  (`/Photos résultats`), crée un lien public, écrit ce lien dans **`Story
-  résultat`** (pas `PhotoEq`) — et **n'écrit pas le score** dans ce cas.
-  Confirmé avec Julien : cette route est très probablement du **code mort**
-  d'une ancienne version du formulaire — le flux actuel envoie le score
-  d'abord, puis (séparément, une fois le score final publié) un lien "ajout
-  photo" s'ouvre pour la photo. Ne pas reproduire ce comportement "photo
-  écrase le score" en le remplaçant.
+### Deux vues dans la même page, pilotées par `?match_id=`
 
-**Scénario "Formulaire nouvelle photo"** (webhook hook `3196485`, partagé par
-l'étape 2 de `form-score-club-2-` ET la totalité de
-`form-score-club-photo-only`) :
-- Reçoit `match_id, code_gesthand, equipe1_label, equipe2_label, meta,
-  source, photo` (peut contenir plusieurs fichiers).
-- Cherche/crée un dossier Dropbox `/Photos matchs/{match_id}`, y upload la
-  photo (pas d'overwrite — plusieurs photos peuvent s'accumuler).
-- **N'écrit rien dans la sheet** — la colonne `PhotoEq` (vue remplie d'un
-  lien Dropbox dans un export CSV) n'est donc pas alimentée par ce
-  scénario ; mécanisme de remplissage réel non identifié (manuel ?
-  scénario Make non exporté ?) — à clarifier avec Julien si on migre cette
-  partie.
-- Julien pense n'envoyer qu'une seule photo "résultat" par match, mais rien
-  ne l'empêche techniquement d'en envoyer plusieurs.
+- **Sans le paramètre** : liste des rencontres. Sélecteur de week-end en
+  haut (par défaut le week-end en cours/à venir), matchs groupés par jour,
+  cadenas 🔒 sous l'heure si le score est déjà verrouillé (FFHB). Un champ
+  "ID match" manuel + bouton "Ouvrir" sert de filet de sécurité si un match
+  n'apparaît pas dans la liste. Cliquer une carte navigue vers
+  `?match_id=XXX` (vraie navigation, pas de routing JS côté client) — donne
+  au passage un lien partageable/bookmarkable par match.
+- **Avec le paramètre** : page dédiée à ce match. Recharge les données
+  depuis le CSV publié à chaque chargement (pas de state partagé entre
+  vues). Contient :
+  - **Score en direct** : steppers +/- (pas de saisie clavier) pour le
+    score domicile/extérieur et le temps de jeu, "État du match"
+    (Terminé/En cours). Chaque tap envoie automatiquement après ~600ms
+    d'inactivité (debounce, évite de spammer le Web App) — pas de bouton
+    "Envoyer". Désactivé (grisé) si le score est verrouillé, avec message
+    explicite.
+  - **Commentaire** : `<textarea>`, même mécanique d'envoi auto débouncé,
+    **jamais désactivé** même si le score est verrouillé.
+  - **Galerie photo** : liste toutes les photos déjà envoyées pour ce match
+    (`list_photos`), avec la photo officielle marquée "⭐ Officielle" et un
+    lien "Choisir comme officielle" sur les autres. "Ajouter une photo"
+    (dropzone, clic ou glisser-déposer) uploade sans désigner automatiquement
+    de photo officielle — sélection toujours manuelle. Chargement de la
+    galerie avec retry automatique (jusqu'à 3 tentatives, ~1,5s d'écart) +
+    bouton "Réessayer" manuel si ça persiste (cf leçon flakiness Apps
+    Script) ; même pattern de bouton "Réessayer" sur upload/sélection en
+    cas d'échec.
+- **Statut d'un match verrouillé** : déterminé côté client à partir de la
+  colonne `Score Source` du CSV publié (`'ffhb'` → verrouillé). Le serveur
+  (`updateScore` dans `Code.gs`) revérifie et refuse aussi toute tentative
+  de modification du score si verrouillé — défense en profondeur, pas
+  seulement une UX côté client.
 
-### Roadmap discutée avec Julien (pas construite, dans cet ordre probable)
+### Notes d'implémentation utiles
 
-1. **Migrer score/photo vers le Web App Apps Script** (remplace Make +
-   Dropbox) — probablement basculer vers Google Drive pour le stockage des
-   photos (accès natif Apps Script, pas de token OAuth Dropbox à gérer),
-   en conservant fidèlement la logique ci-dessus (sans la route morte
-   "photo écrase le score").
-2. **Génération semi-auto d'image de résultat** (score + photo + logos
-   sponsors) via l'**API Canva Pro** (compte associatif de Julien, déjà
-   choisi plutôt qu'un template HTML/Playwright maison — meilleur rendu
-   visuel, Julien accepte la dépendance externe). Publication sur
-   Instagram : **volontairement manuelle** (Julien ouvre l'image générée
-   sur son téléphone et poste lui-même) — pas d'automatisation Meta Graph
-   API prévue, jugée trop lourde pour le gain.
-3. **Sponsors** : bandeau/pied de page réutilisable sur les futures vues.
+- `CONFIG.fields` (en tête du `<script>`) fait le mapping nom de champ JS →
+  en-tête exact de colonne CSV — à tenir à jour si une colonne de la sheet
+  est renommée.
+- Toutes les requêtes d'écriture passent par `CONFIG.webhookUrl` +
+  `CONFIG.webhookSecret` (= `FORM_SHARED_SECRET` de `Code.gs`) — à
+  resynchroniser si le secret change côté Apps Script.
+- Donnée de test à surveiller/nettoyer si besoin : le match `AMAB3` (poule
+  "Tournoi Amical", donc sans enjeu réel) porte des photos et un commentaire
+  de test posés pendant le développement de la galerie/commentaire — jamais
+  nettoyés, à faire si ça gêne (ou laisser, c'est un match fictif).
+
+## Roadmap (état à date, pour la suite)
+
+1. ~~**Migrer score/photo vers le Web App Apps Script**~~ — **fait**, voir
+   sections ci-dessus (`Code.gs` + page match unifiée `form-score-club-2-`).
+2. **Explorer l'exploitation des données dans d'autres outils : Canva,
+   SportsRégions, etc.** — **prochaine étape demandée par Julien**, voir
+   section dédiée en tête de ce fichier. Rien de construit, à cadrer avec
+   lui avant de coder.
+3. **Résumé PDF hebdomadaire** ("Journal L'Équipe du week-end" dans les
+   discussions précédentes) — bilan des matchs joués/gagnés/perdus + photos
+   + commentaires, généré automatiquement par cron nocturne, lien de
+   téléchargement sur le site le lundi matin (décision déjà prise avec
+   Julien : lien sur le site, pas d'email). L'infrastructure préalable
+   (commentaire + galerie photo) est **construite** ; la génération PDF
+   elle-même (probablement Playwright en CI, `page.pdf()`, réutilisant le
+   pattern `window.print()`/`@media print` déjà validé) **n'est pas
+   commencée**.
+4. **Sponsors** : bandeau/pied de page réutilisable sur les futures vues.
    Pas encore de source de données identifiée pour la liste de sponsors —
    à demander à Julien avant de construire.
-4. **Dashboard live pour les licenciés** (lecture simple de `data/*.csv`,
+5. **Dashboard live pour les licenciés** (lecture simple de `data/*.csv`,
    pas de nouvelle donnée à collecter).
-5. **Écran TV au gymnase** — variante plein écran/auto-refresh du
+6. **Écran TV au gymnase** — variante plein écran/auto-refresh du
    dashboard ci-dessus.
-6. **Journal "L'Équipe" du week-end** — bilan des matchs joués/gagnés/perdus
-   + quelques photos + commentaires coach/public (nécessite d'étendre le
-   formulaire score avec un champ commentaire optionnel). Réutiliser soit
-   le pattern Team Book existant (HTML + `window.print()`), soit Canva Bulk
-   Create si le rendu visuel prime.
 7. **Outil d'aide à la planification** — un vrai projet à part, décrit en
    détail par Julien : (a) déterminer quels matchs sont à domicile pour le
    club, sachant que pour une entente il faut d'abord s'accorder entre
