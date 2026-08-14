@@ -223,12 +223,22 @@ disparaître les données des équipes non sélectionnées.
 
 GitHub Actions n'évalue les triggers `schedule:` que sur la **branche par
 défaut** (`main`) — le cron ne tournera qu'une fois ce workflow mergé, pas
-sur une branche de feature. Le cron est en UTC sans awareness du changement
-d'heure française ; `0 1 * * *` (1h00 UTC tous les jours) tombe vers 2h00 CET
-(hiver) ou 3h00 CEST (été) — accepté comme compromis plutôt que de gérer deux
-cron saisonniers. Remplace l'ancien cron hebdomadaire du dimanche soir : un
-run quotidien couvre déjà le week-end (matchs du dimanche scrapés dans la
-nuit de dimanche à lundi) et garde aussi les données fraîches en semaine.
+sur une branche de feature. Remplace l'ancien cron hebdomadaire du dimanche
+soir : un run quotidien couvre déjà le week-end (matchs du dimanche scrapés
+dans la nuit de dimanche à lundi) et garde aussi les données fraîches en
+semaine.
+
+Le cron GitHub Actions n'a pas de notion de fuseau horaire (toujours en
+UTC) : pour viser ~1h13 heure de Paris toute l'année, il y a **2 cron**
+dans le workflow, un par saison (`13 0 * 11,12,1,2,3 *` nov-mars = 0h13
+UTC = ~1h13 CET ; `13 23 * 4,5,6,7,8,9,10 *` avr-oct = 23h13 UTC = ~1h13
+CEST), découpés par mois entier plutôt que par date exacte de changement
+d'heure — ~1 semaine de décalage d'1h autour des 2 transitions annuelles
+(fin mars, fin octobre), négligeable ici. Minute décalée à `:13` (pas
+`:00`) : GitHub documente que les cron programmés pile à l'heure ronde
+subissent plus de retard (file d'attente saturée par tous les cron du même
+instant) — confirmé en pratique, un run programmé à 1h00 UTC pile avait
+démarré avec ~2h30 de retard.
 
 ### Rafraîchissement manuel depuis l'UI
 
