@@ -472,6 +472,45 @@ ${rows}
 </table>`;
 }
 
+// ---------- 2bis) FICHE ÉQUIPE POUR SPORTSRÉGIONS (HTML minimal, 1 équipe) ----------
+// Même contrainte que renderEquipeMinimal (l'éditeur SportsRégions ne garde que
+// color/background-color en style inline, plus br/b/i ; les attributs HTML
+// (border, cellpadding, cellspacing) survivent car ce ne sont pas des styles CSS.
+function renderEquipeFicheSportsRegions(r) {
+  const label = r.categorie + (r.indice ? ' ' + r.indice : '');
+  const sectionColor = SECTION_COLORS[r.section] || DEFAULT_SECTION_COLOR;
+
+  const trainRows = DAYS.map(d => r.cells[d].map(s => {
+    const color = VILLE_COLORS[s.ville] || DEFAULT_VILLE_COLOR;
+    const lieuPart = s.gymnase
+      ? `<span style="color:${color}"><b>${s.ville}</b></span><br><i>${s.gymnase}</i>`
+      : `<i>${s.ville}</i>`;
+    return `<tr><td><b>${d}</b></td><td>${s.deb}–${s.fin}</td><td>${lieuPart}</td></tr>`;
+  }).join('')).join('');
+  const trainBlock = trainRows
+    ? `<table border="1" cellpadding="6" cellspacing="0">
+<tr><th style="background-color:#1a1a1a;color:#ffffff">Jour</th><th style="background-color:#1a1a1a;color:#ffffff">Horaire</th><th style="background-color:#1a1a1a;color:#ffffff">Lieu</th></tr>
+${trainRows}
+</table>`
+    : `<p><i>Aucun créneau renseigné.</i></p>`;
+
+  const coachBlock = r.entraineurs.length
+    ? `<p><b>Entraîneur${r.entraineurs.length > 1 ? 's' : ''} :</b> ${r.entraineurs.join(', ')}</p>`
+    : '';
+
+  function champLine(phaseLabel, phase) {
+    if (!phase.niveau) return '';
+    const poulePart = phase.poule ? ` (poule ${phase.poule})` : '';
+    const linkPart = phase.lien ? `<br><a href="${phase.lien}" target="_blank" rel="noopener">Voir la poule sur FFHB</a>` : '';
+    return `<p><b>${phaseLabel} :</b> ${phase.niveau}${poulePart}${linkPart}</p>`;
+  }
+  const champBlock = champLine('Phase 1', r.p1) + champLine('Phase 2', r.p2);
+
+  return `<p><span style="color:${sectionColor}"><b>${r.section}</b></span> — <b>${label}</b></p>
+${trainBlock}
+${coachBlock}${champBlock}`;
+}
+
 // ---------- 3) VERSION PAR GYMNASE ----------
 function renderParGymnase(records) {
   // records = liste brute (non fusionnée) avec section connue, on reconstruit les sessions individuelles

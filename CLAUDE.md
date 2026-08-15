@@ -18,30 +18,31 @@ entier avant de commencer, `git pull origin main` d'abord.
 
 ## Prochaine étape demandée par Julien (au moment de la rédaction)
 
-**Explorer l'exploitation des données de la sheet "Matchs" dans d'autres
-outils : Canva, SportsRégions, etc.** — pas encore commencé. Contexte utile
-déjà en place :
-- Les colonnes `INSTA_Cat`/`INSTA_date`/`INSTA_Eq1`/`INSTA_Eq2`/`Insta_Ville`
-  existent déjà dans la sheet, remplies automatiquement à la création de
-  chaque ligne de match par le scraper — pensées à l'origine comme aide pour
-  un futur Canva Bulk Create (import CSV dans Canva pour générer un visuel
-  par match). Jamais utilisées/testées côté Canva pour de vrai.
-- `PhotoEq` contient le lien de la photo "officielle" d'un match (voir
-  section "Page match" plus bas) — probablement la donnée la plus utile à
-  pousser vers Canva pour un visuel de résultat.
-- `Commentaire` (nouvelle colonne, voir plus bas) pourrait alimenter un texte
-  de légende.
-- Rien n'a été fait côté API Canva (pas de compte/clé testés dans ce repo).
-  Le compte est un compte Canva Pro associatif de Julien.
-- **SportsRégions** = le CMS du site officiel du club, déjà mentionné dans
-  "Leçons apprises" ci-dessous (éditeur qui filtre le CSS collé, d'où
-  `renderEquipeMinimal`). Pas d'API connue pour l'instant — à voir si
-  SportsRégions expose quoi que ce soit d'automatisable ou si ça reste du
-  copier-coller HTML manuel.
-- Piste à creuser avec Julien avant de coder quoi que ce soit : quel usage
-  concret veut-il (auto-poster sur Instagram via Canva ? générer un visuel
-  que lui poste manuellement, comme déjà décidé pour l'étape Canva du
-  roadmap ci-dessous ? alimenter SportsRégions automatiquement ?).
+**État (2026-08-15) : les 37 fiches équipe (contenu + illustration logo/nom)
+sont générées et en ligne sur SportsRégions.** Session précédente très
+productive sur ce chantier — détail complet, scripts et leçons apprises
+dans la section dédiée **"Automatisation SportsRégions"** plus bas dans ce
+fichier. Résumé :
+- `renderEquipeFicheSportsRegions(r)` (dans `index.html`, sur la branche
+  **`feature/fiche-equipe-sportsregions`, pas encore mergée ni pushée**)
+  génère le bloc HTML "safe" (planning + entraîneurs + championnat) collé
+  dans le champ CKEditor "Présentation" de chaque équipe SportsRégions.
+- Script Python `sportsregions_pipeline.py` (dossier `97 - python`, **hors
+  de ce repo**, à côté de `vpn_connect.py`/`shippingbo_pipeline.py`) pilote
+  SportsRégions en Playwright : login+2FA, création/modification d'équipe,
+  upload de l'illustration.
+- Illustration = logo de section + nom d'équipe, générée via un connecteur
+  Canva MCP (pas de script Python autonome pour cette partie — pilotée
+  interactivement en session Claude Code, voir section dédiée pour la
+  méthode et le piège à connaître).
+- Convention de nommage des équipes SportsRégions :
+  `{Catégorie}{Genre} {Indice}` (ex. `M11F A`, `M18G CF`, `SF A` pour
+  Seniors) — genre **toujours** accolé à la catégorie, jamais de collision
+  de nom entre sections.
+- Prochaine sous-étape possible : import des matchs (calendrier) sur
+  SportsRégions — piste identifiée (`admin.sportsregions.fr/evenement`,
+  import CSV) mais **pas explorée**, limite connue : l'import n'ajoute
+  jamais ne supprime.
 
 ## Hébergement
 
@@ -576,14 +577,91 @@ unique `index.html`, même philosophie que `sv-planning-entrainements`
   de test posés pendant le développement de la galerie/commentaire — jamais
   nettoyés, à faire si ça gêne (ou laisser, c'est un match fictif).
 
+## Automatisation SportsRégions (fiches équipe + illustrations)
+
+Les 37 équipes de la saison 2026-2027 ont une fiche SportsRégions complète
+(planning, entraîneurs, championnat + lien FFHB, logo de section, nom
+d'équipe) générée et maintenue par automatisation plutôt que saisie manuelle.
+
+**Répartition du code (attention, pas tout dans ce repo)** :
+- `renderEquipeFicheSportsRegions(r)` dans `index.html` — génère le bloc
+  HTML "safe" à coller dans le champ CKEditor "Présentation de l'équipe"
+  (mêmes contraintes que `renderEquipeMinimal` : seuls `<br>/<b>/<i>` +
+  `style="color:.../background-color:..."` survivent au filtrage de
+  l'éditeur — **mais** les attributs HTML `border`/`cellpadding`/`cellspacing`
+  d'un `<table>`, et les liens `<a href>`, survivent aussi, confirmé en
+  prod). **Sur la branche `feature/fiche-equipe-sportsregions`, jamais
+  mergée/pushée** — à récupérer avant de continuer ce chantier
+  (`git log`/`git diff` sur cette branche localement).
+- `sportsregions_pipeline.py` + `sportsregions_creds.py` — **dans le dossier
+  `97 - python` (repo AT4 séparé, PAS dans `sv-planning-entrainements`)**, à
+  côté de `vpn_connect.py`/`shippingbo_pipeline.py`. Playwright pilote
+  `admin.sportsregions.fr` (login+2FA, création/modif d'équipe, upload
+  illustration). Identifiants dans le coffre Windows (`keyring`, service
+  `AT4_SportsRegions`).
+
+**Points techniques importants (à ne pas redécouvrir)** :
+- `admin.sportsregions.fr` est un **sous-domaine à session séparée** de
+  `sportingvillette.com` — toute navigation doit passer par le pont SSO
+  `https://www.sportingvillette.com/login/go?l=<url encodée>`
+  (`admin_bridge()` dans le script), sinon on retombe sur un formulaire de
+  login admin distinct.
+- **2FA au premier login** d'une session Playwright (probablement une
+  vérif "nouvel appareil", pas une 2FA de compte à proprement parler) —
+  contournée en sauvegardant `context.storage_state()` après un premier
+  login **headed** (fenêtre visible, code tapé par Julien) ; les runs
+  suivants réutilisent la session sans 2FA. **La session expire assez vite
+  (observé : de ~10 min à quelques heures selon les runs)** — si un script
+  échoue avec "Session SportsRégions expirée", relancer
+  `python sportsregions_pipeline.py --login-test`.
+- Convention de nommage des équipes : `{Catégorie}{Genre} {Indice}`, genre
+  (`F`/`G`, rien si Mixte/vide) **accolé sans espace** à la catégorie,
+  indice séparé par un espace (ex. `M11F A`, `M18G CF`, `LoisirG`,
+  `Handfit`). `Seniors` abrégé en `S` (donc `SF`/`SG`). Toujours encoder le
+  genre dans le nom, même sans risque de collision apparent — élimine
+  structurellement toute ambiguïté entre sections.
+- Table admin `/groupe` : le nom d'équipe est dans `td.titre`/`td.ellipsis`,
+  **pas le premier `<td>`** (une colonne case-à-cocher a été ajoutée par
+  SportsRégions à un moment donné, cassant un sélecteur naïf) —
+  `find_team_id()` cible `td.titre, td.ellipsis` spécifiquement.
+- Upload de la "Photo de l'équipe" = vrai upload de fichier via
+  `#file_upload_component_illustration` (`page.set_input_files`), pas une
+  URL — `upload_illustration()` dans le script.
+
+**Illustration (logo + nom d'équipe) via Canva** :
+- Connecteur Canva MCP piloté **interactivement en session** (pas de script
+  Python autonome) : `copy-design` du modèle maître "Modèle logo équipe"
+  (`DAHSSrVYMtE`, dossier Canva "Claude") → `edit-design` (redimensionner le
+  cadre logo selon le ratio de la section pour "contenir" sans rogner,
+  remplir avec le bon logo, remplacer le texte par le nom d'équipe) →
+  `export-design` PNG 1200×800 → upload via `sportsregions_pipeline.py`.
+- 4 logos de section identifiés dans Canva (asset IDs et tailles de cadre
+  "contenant" par section — SV, EVG, ELEH, EEL) — voir les designs déjà
+  générés dans le dossier "Claude" si besoin de retrouver les asset IDs
+  (ou redemander à Julien le lien du dossier de logos).
+- **⚠️ Bug Canva confirmé, à surveiller sur tout futur lot** :
+  `export-design` appelé juste après un `edit-design(finalize:"commit")` sur
+  une copie structurellement identique à d'autres (même template recopié
+  plusieurs fois) peut renvoyer le **contenu d'un design voisin** généré à
+  peu près au même moment, silencieusement. Un lot de 36 exports a eu 3
+  erreurs de ce type, détectées uniquement en **regardant chaque image
+  téléchargée avant de l'uploader** — pas de méthode automatique fiable
+  trouvée. Toujours vérifier visuellement avant upload, surtout sur un gros
+  lot.
+- Le connecteur Canva n'a pas d'outil de suppression — nettoyer le dossier
+  "Claude" (designs de travail, un par équipe générée) se fait manuellement
+  par Julien dans l'UI Canva si besoin.
+
 ## Roadmap (état à date, pour la suite)
 
 1. ~~**Migrer score/photo vers le Web App Apps Script**~~ — **fait**, voir
    sections ci-dessus (`Code.gs` + page match unifiée `form-score-club-2-`).
-2. **Explorer l'exploitation des données dans d'autres outils : Canva,
-   SportsRégions, etc.** — **prochaine étape demandée par Julien**, voir
-   section dédiée en tête de ce fichier. Rien de construit, à cadrer avec
-   lui avant de coder.
+2. ~~**Explorer l'exploitation des données dans d'autres outils : Canva,
+   SportsRégions, etc.**~~ — **fiches équipe + illustrations faites**, voir
+   section dédiée "Automatisation SportsRégions" ci-dessus. Suite possible,
+   pas commencée : import du calendrier des matchs sur SportsRégions
+   (`admin.sportsregions.fr/evenement`, import CSV repéré mais jamais
+   exploré — limite connue : ajoute seulement, ne supprime jamais).
 3. **Résumé PDF hebdomadaire** ("Journal L'Équipe du week-end" dans les
    discussions précédentes) — bilan des matchs joués/gagnés/perdus + photos
    + commentaires, généré automatiquement par cron nocturne, lien de
