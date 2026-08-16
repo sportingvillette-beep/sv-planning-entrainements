@@ -1,0 +1,216 @@
+# Tâche Cowork : générer le post Instagram "planning des matchs" du week-end
+
+Ce fichier est le prompt complet à donner à une tâche planifiée Cowork
+(hebdomadaire, mardi soir) pour générer automatiquement le post Instagram
+"planning des matchs" du club de handball Sporting Villette. Il s'utilise
+avec [`build_weekend_payload.py`](build_weekend_payload.py), qui fait le
+travail de données (regroupement du calendrier par week-end et par page
+du gabarit Canva).
+
+**Pour la tâche Cowork elle-même**, inutile de coller tout ce fichier :
+donne-lui simplement une instruction du type *"Récupère et suis
+scrupuleusement les instructions de
+`https://raw.githubusercontent.com/sportingvillette-beep/sv-planning-entrainements/main/scripts/weekend_canva_post_prompt.md`"*.
+Toute mise à jour de la procédure se fait alors en éditant ce fichier,
+sans retoucher la configuration de la tâche planifiée.
+
+Tu n'as (Cowork) aucun souvenir d'une conversation précédente sur ce
+sujet — tout ce dont tu as besoin est dans ce document.
+
+---
+
+## RÈGLE ABSOLUE
+
+N'utilise **JAMAIS** l'opération `add_text` du connecteur Canva MCP. Elle
+crée un texte avec une police par défaut différente de celle du design
+(déjà vérifié, source de bug corrigé manuellement une fois). Tu ne dois
+utiliser **QUE** `replace_text` (changer le contenu d'un texte existant,
+garde son formatage) et `delete_element` (supprimer un élément existant).
+N'ajoute jamais un nouvel élément texte.
+
+---
+
+## Phase 0 — Récupérer les données du week-end
+
+Exécute (Bash) :
+
+```
+curl -s -o build_weekend_payload.py https://raw.githubusercontent.com/sportingvillette-beep/sv-planning-entrainements/main/scripts/build_weekend_payload.py
+python3 build_weekend_payload.py \
+  --calendrier https://sportingvillette-beep.github.io/sv-planning-entrainements/data/calendrier_club.csv \
+  --team-mapping https://sportingvillette-beep.github.io/sv-planning-entrainements/scraper/team_mapping.csv \
+  --out weekend_payload.json
+cat weekend_payload.json
+```
+
+Si tu n'as pas accès à Bash/Python : arrête-toi et indique-le clairement
+dans ton rapport final plutôt que d'essayer de reconstruire la logique à
+la main (parsing de dates FR, nettoyage de noms d'adversaires) — c'est
+fragile et non fiable si improvisé.
+
+Le JSON contient :
+- `weekend_label` (ex. `"17 & 18 JAN."`) — à écrire sur chaque page.
+- `pages` : un objet avec au plus les clés `"M7_M9"`, `"M11"`, `"M13"`,
+  `"M15"`, `"M16_M17"`, `"M18"`, `"Seniors"` — **seules les clés avec au
+  moins un match sont présentes**. Chaque valeur est une liste de lignes
+  `{equipe, jour, recevant, visiteur, lieu}`.
+- `domicile` : liste de lignes `{equipe, jour, recevant, visiteur}`
+  (matchs à domicile, toutes catégories, pour la page "à Villette").
+- `warnings` : anomalies détectées par le script (mapping équipe
+  introuvable, etc.) — à reporter, pas à ignorer.
+
+---
+
+## Phase 1 — Dupliquer le gabarit
+
+Le gabarit de référence est le design Canva **`DAHSb3SEpJ4`** (titre
+"Modèle post planning matchs 2026-27"), dans le dossier "AI templates".
+**Ne jamais modifier ce design directement** — toujours travailler sur
+une copie.
+
+1. Duplique-le entièrement (`copy-design` sur `design_id: "DAHSb3SEpJ4"`)
+   pour créer le post de cette semaine.
+2. Vérifie que la copie a bien 9 pages (`page_count`). Si ce n'est pas le
+   cas, arrête-toi et signale-le au lieu de continuer sur une base
+   incomplète.
+3. Renomme le design copié : `"Post planning matchs — {weekend_label}"`
+   (ex. `"Post planning matchs — 17 & 18 JAN."`).
+4. Si possible, déplace-le dans le dossier "AI Generated"
+   (`folder_id: "FAHSb6QPbhA"`) via `move-item-to-folder`. Si l'opération
+   échoue, continue quand même — ce n'est pas bloquant.
+
+Structure des 9 pages de ce design (fixe, toujours dans cet ordre) :
+
+| Page | Contenu | Clé JSON |
+|---|---|---|
+| 1 | Couverture (pas de tableau) | — |
+| 2 | "à Villette" / matchs à domicile — colonnes Équipe / Jour / Recevant / Visiteur (4 colonnes, **pas** de "Lieu du match") | `domicile` |
+| 3 | M7 M9 | `M7_M9` |
+| 4 | M11 | `M11` |
+| 5 | M13 | `M13` |
+| 6 | M15 | `M15` |
+| 7 | M16 M17 | `M16_M17` |
+| 8 | M18 | `M18` |
+| 9 | Seniors | `Seniors` |
+
+Pages 3 à 9 ont 5 colonnes : Équipe / Jour / Recevant / Visiteur / Lieu
+du match.
+
+---
+
+## Phase 2 — Mettre à jour la date sur les 9 pages
+
+Sur **chaque** page (1 à 9), il y a un texte de date au format
+`"17 & 18 JAN."` (grande police ~120pt, distinct du titre de catégorie
+et du texte "PLANNING DES MATCHS"). Remplace son contenu par
+`weekend_label` du JSON (`replace_text`). Ne touche à aucun autre texte
+de la page 1 (le sous-titre libre éventuel, s'il y en a un, doit rester
+tel quel — ce n'est pas généré automatiquement).
+
+---
+
+## Phase 3 — Remplir chaque page catégorie (pages 3 à 9)
+
+Pour chaque page dans l'ordre (3, 4, 5, 6, 7, 8, 9), fais ce qui suit
+dans une transaction dédiée (`read-design` avec `open_transaction: true`,
+scope `filter.page_indices` sur cette seule page pour rester léger) :
+
+1. Lis la page. Identifie : la forme rectangulaire d'en-tête (bleue, en
+   haut du tableau — **ne pas y toucher**), puis les lignes de données
+   suivantes = une forme rectangulaire (fond alterné clair/blanc) + les
+   textes qui se superposent à elle, dans l'ordre visuel de haut en bas
+   (trie par `top` croissant si besoin). Chaque ligne a 5 textes dans
+   l'ordre des colonnes (Équipe, Jour, Recevant, Visiteur, Lieu du
+   match), reconnaissables par leur position horizontale (`left`)
+   croissante.
+
+2. Récupère `json_rows = payload["pages"].get("<CLÉ_DE_CETTE_PAGE>", [])`.
+
+   **Cas A — `json_rows` est vide** (page absente du JSON) : ne remplis
+   rien. Note cette page comme "à supprimer" (tu la supprimeras à la
+   Phase 5, **pas maintenant** — supprimer une page maintenant décalerait
+   les index des pages suivantes que tu n'as pas encore traitées).
+
+   **Cas B — `json_rows` a moins d'entrées que de lignes
+   pré-construites sur la page** :
+   - Pour les N premières lignes pré-construites (N = nombre d'entrées
+     dans `json_rows`) : remplace le contenu des 5 textes par les
+     valeurs correspondantes (`equipe`/`jour`/`recevant`/`visiteur`/
+     `lieu`) via `replace_text`, dans l'ordre où tu as lu les lignes.
+   - Pour les lignes pré-construites en trop (au-delà de N) : supprime-
+     les entièrement (`delete_element` sur la forme de fond ET sur ses 5
+     textes).
+
+   **Cas C — `json_rows` a plus d'entrées que de lignes pré-construites
+   disponibles** : ne force rien (pas d'`add_text`). Remplis les lignes
+   disponibles, et note dans ton rapport final : *"page \<X\> : N
+   match(s) non affiché(s), le gabarit n'a pas assez de lignes prévues —
+   à agrandir manuellement."* Ce cas ne devrait normalement pas arriver
+   (le gabarit a été dimensionné sur l'effectif réel de chaque
+   catégorie) mais mieux vaut le signaler que le cacher.
+
+3. Une fois les lignes conservées remplies (cas B ou C), pour **chaque**
+   ligne conservée, dans l'ordre de haut en bas :
+   1. Relis la hauteur réelle actuelle de chacun de ses 5 textes (elle
+      vient de changer suite au `replace_text` — jamais la supposer,
+      toujours la relire).
+   2. Si la hauteur du texte le plus grand de la ligne dépasse la
+      hauteur actuelle de la forme de fond de cette ligne : agrandis la
+      forme de fond (`resize_element`) pour qu'elle fasse (hauteur du
+      texte le plus grand + 20px de marge). Décale ensuite **toutes les
+      lignes suivantes** de cette page (leur forme de fond ET leurs
+      textes) vers le bas, du même delta (nouvelle_hauteur −
+      ancienne_hauteur) — sinon elles se chevauchent.
+   3. Recentre verticalement chacun des 5 textes de cette ligne dans sa
+      forme de fond (dont la hauteur vient peut-être de changer à
+      l'étape précédente) avec cette formule, appliquée individuellement
+      à chaque texte :
+
+      ```
+      top_texte = top_forme + (hauteur_forme − hauteur_texte) / 2
+      ```
+
+      Utilise la hauteur réelle actuelle de chaque texte, pas une valeur
+      supposée.
+
+4. Committe la transaction de cette page avant de passer à la suivante.
+
+---
+
+## Phase 4 — Remplir la page 2 "à Villette" (matchs à domicile)
+
+Même procédure que la Phase 3, mais avec `json_rows = payload["domicile"]`,
+sur les lignes à 4 colonnes (Équipe/Jour/Recevant/Visiteur, pas de "Lieu
+du match"). Si `domicile` est vide, note cette page comme "à supprimer"
+(Phase 5).
+
+---
+
+## Phase 5 — Supprimer les pages sans aucun match
+
+S'il y a des pages notées "à supprimer" (Phases 3 et 4), supprime-les
+maintenant via `merge-designs` (opération `delete_pages`), en traitant
+les pages de **l'index le plus élevé vers le plus bas** (pour ne pas
+décaler l'index des pages pas encore supprimées). Ne supprime jamais la
+page 1 (couverture).
+
+---
+
+## Phase 6 — Vérification finale
+
+Relis le design entier (thumbnails de chaque page restante) pour un
+contrôle visuel rapide : pas de chevauchement de texte visible, pas de
+ligne vide oubliée, dates cohérentes.
+
+**Ne publie rien, ne partage rien, n'envoie rien** sur Instagram ou
+ailleurs — cette tâche s'arrête à la génération du visuel dans Canva.
+
+---
+
+## Rapport final attendu
+
+- Le `edit_url` du design généré.
+- La liste des pages conservées vs supprimées (et pourquoi).
+- Le contenu de `warnings` du JSON (Phase 0), s'il y en a.
+- Tout cas C rencontré (page trop petite pour le nombre de matchs).
+- Toute erreur rencontrée à n'importe quelle étape, verbatim.
