@@ -75,9 +75,12 @@ une copie.
    incomplète.
 3. Renomme le design copié : `"Post planning matchs — {weekend_label}"`
    (ex. `"Post planning matchs — 17 & 18 JAN."`).
-4. Si possible, déplace-le dans le dossier "AI Generated"
-   (`folder_id: "FAHSb6QPbhA"`) via `move-item-to-folder`. Si l'opération
-   échoue, continue quand même — ce n'est pas bloquant.
+4. Déplace-le dans le dossier "AI Generated" (`folder_id: "FAHSb6QPbhA"`)
+   via `move-item-to-folder` — c'est là que Julien va chercher les posts
+   générés chaque semaine, ne saute pas cette étape. Si l'opération
+   échoue quand même, ne bloque pas le reste de la tâche pour autant,
+   mais signale-le bien en évidence dans ton rapport final (avec
+   l'`edit_url`, pour qu'il retrouve le design même mal rangé).
 
 Structure des 9 pages de ce design (fixe, toujours dans cet ordre) :
 
