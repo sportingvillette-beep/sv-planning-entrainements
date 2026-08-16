@@ -75,9 +75,12 @@ une copie.
    incomplète.
 3. Renomme le design copié : `"Post planning matchs — {weekend_label}"`
    (ex. `"Post planning matchs — 17 & 18 JAN."`).
-4. Si possible, déplace-le dans le dossier "AI Generated"
-   (`folder_id: "FAHSb6QPbhA"`) via `move-item-to-folder`. Si l'opération
-   échoue, continue quand même — ce n'est pas bloquant.
+4. Déplace-le dans le dossier "AI Generated" (`folder_id: "FAHSb6QPbhA"`)
+   via `move-item-to-folder` — c'est là que Julien va chercher les posts
+   générés chaque semaine, ne saute pas cette étape. Si l'opération
+   échoue quand même, ne bloque pas le reste de la tâche pour autant,
+   mais signale-le bien en évidence dans ton rapport final (avec
+   l'`edit_url`, pour qu'il retrouve le design même mal rangé).
 
 Structure des 9 pages de ce design (fixe, toujours dans cet ordre) :
 
@@ -126,10 +129,28 @@ scope `filter.page_indices` sur cette seule page pour rester léger) :
 
 2. Récupère `json_rows = payload["pages"].get("<CLÉ_DE_CETTE_PAGE>", [])`.
 
-   **Cas A — `json_rows` est vide** (page absente du JSON) : ne remplis
-   rien. Note cette page comme "à supprimer" (tu la supprimeras à la
-   Phase 5, **pas maintenant** — supprimer une page maintenant décalerait
-   les index des pages suivantes que tu n'as pas encore traitées).
+   **Cas A — `json_rows` est vide** (page absente du JSON) : **ne
+   supprime jamais la page** — la suppression de page Canva
+   (`merge-designs`/`delete_pages`) exige qu'un humain tape littéralement
+   la phrase *"I approve the deletion"*, ce qui est impossible à obtenir
+   en session planifiée non surveillée (vérifié : c'est une règle codée
+   en dur dans l'outil, pas une prudence de circonstance — ne retente pas
+   `delete_pages` sur cette page). À la place, transforme le tableau de
+   cette page en message "pas de match" :
+   1. Garde la **première** ligne pré-construite (sa forme de fond + un
+      seul de ses textes, par exemple celui de la colonne "Équipe") ;
+      supprime les 4 (ou 3, page "à domicile") autres textes de cette
+      même ligne (`delete_element`).
+   2. Remplace le contenu du texte restant par `"Pas de match ce
+      week-end"` (`replace_text`).
+   3. Redimensionne-le pour qu'il occupe toute la largeur de la ligne
+      (`left: 60, width: 960`) et recentre-le verticalement dans sa forme
+      de fond avec la même formule qu'à l'étape 3 ci-dessous.
+   4. Supprime entièrement toutes les autres lignes pré-construites de
+      cette page (leur forme de fond ET leurs 5 textes chacune) via
+      `delete_element` — c'est une suppression d'élément à l'intérieur
+      d'une page, pas une suppression de page : aucune confirmation
+      humaine n'est requise pour ça, c'est bien automatisable.
 
    **Cas B — `json_rows` a moins d'entrées que de lignes
    pré-construites sur la page** :
@@ -181,26 +202,16 @@ scope `filter.page_indices` sur cette seule page pour rester léger) :
 
 Même procédure que la Phase 3, mais avec `json_rows = payload["domicile"]`,
 sur les lignes à 4 colonnes (Équipe/Jour/Recevant/Visiteur, pas de "Lieu
-du match"). Si `domicile` est vide, note cette page comme "à supprimer"
-(Phase 5).
+du match"). Si `domicile` est vide, applique le même traitement "Cas A"
+(message "Pas de match ce week-end", page conservée).
 
 ---
 
-## Phase 5 — Supprimer les pages sans aucun match
+## Phase 5 — Vérification finale
 
-S'il y a des pages notées "à supprimer" (Phases 3 et 4), supprime-les
-maintenant via `merge-designs` (opération `delete_pages`), en traitant
-les pages de **l'index le plus élevé vers le plus bas** (pour ne pas
-décaler l'index des pages pas encore supprimées). Ne supprime jamais la
-page 1 (couverture).
-
----
-
-## Phase 6 — Vérification finale
-
-Relis le design entier (thumbnails de chaque page restante) pour un
-contrôle visuel rapide : pas de chevauchement de texte visible, pas de
-ligne vide oubliée, dates cohérentes.
+Relis le design entier (9 pages, aucune supprimée) pour un contrôle
+visuel rapide : pas de chevauchement de texte visible, pages "pas de
+match" lisibles et bien centrées, dates cohérentes partout.
 
 **Ne publie rien, ne partage rien, n'envoie rien** sur Instagram ou
 ailleurs — cette tâche s'arrête à la génération du visuel dans Canva.
@@ -210,7 +221,10 @@ ailleurs — cette tâche s'arrête à la génération du visuel dans Canva.
 ## Rapport final attendu
 
 - Le `edit_url` du design généré.
-- La liste des pages conservées vs supprimées (et pourquoi).
+- La liste des pages remplies avec de vrais matchs vs celles passées en
+  "Pas de match ce week-end" (et pourquoi).
 - Le contenu de `warnings` du JSON (Phase 0), s'il y en a.
 - Tout cas C rencontré (page trop petite pour le nombre de matchs).
 - Toute erreur rencontrée à n'importe quelle étape, verbatim.
+
+Le design final a toujours 9 pages (aucune page n'est jamais supprimée).
