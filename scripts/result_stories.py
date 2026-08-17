@@ -13,12 +13,19 @@ Code.gs, en-tête : FORM_SHARED_SECRET est délibérément moins sensible que
 SHARED_SECRET, sa présence ici ne constitue pas une nouvelle exposition).
 
 Usage :
-    python scripts/result_stories.py list [--out fichier.json]
+    python scripts/result_stories.py list [--out fichier.json] [--window-only]
     python scripts/result_stories.py mark-done --match-id rencontre-XXXXXXX [--value texte]
 
 `list` n'affiche QUE les matchs avec score final + `PhotoEq` renseignés ET
 `Story résultat` encore vide — "pas de photo -> pas de story", point. La
 règle est appliquée ici, pas laissée à l'appréciation de qui lit la sortie.
+
+`--window-only` : la tâche planifiée (Cowork) tourne toutes les heures en
+continu (son planificateur ne sait pas restreindre à des créneaux), donc
+c'est ce script qui refuse de travailler hors des créneaux de match voulus
+par Julien (samedi 12h-23h, dimanche 11h-17h, heure de Paris) — sort tout
+de suite sans même aller lire le CSV si on est hors créneau, plutôt que de
+compter sur le prompt Cowork pour deviner l'heure correctement.
 """
 
 import argparse
@@ -29,6 +36,9 @@ import sys
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+PARIS_TZ = ZoneInfo("Europe/Paris")
 
 MATCHS_CSV_URL = (
     "https://docs.google.com/spreadsheets/d/e/"
@@ -45,6 +55,22 @@ def _read_csv(url: str) -> list:
     with urllib.request.urlopen(url, timeout=30) as resp:
         raw = resp.read().decode("utf-8-sig")
     return list(csv.DictReader(io.StringIO(raw)))
+
+
+def in_scheduled_window(now: datetime = None) -> bool:
+    """Créneaux voulus par Julien pour cette routine horaire : samedi
+    12h-23h, dimanche 11h-17h, heure de Paris (jamais le fuseau système du
+    sandbox d'exécution, pas fiable). Bornes incluses des deux côtés."""
+    if now is None:
+        now = datetime.now(PARIS_TZ)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=PARIS_TZ)
+    weekday = now.weekday()  # Monday=0 ... Sunday=6
+    if weekday == 5:  # samedi
+        return 12 <= now.hour <= 23
+    if weekday == 6:  # dimanche
+        return 11 <= now.hour <= 17
+    return False
 
 
 def equipe_label(categorie: str, genre: str, indice: str) -> str:
@@ -112,6 +138,12 @@ def main():
     p_list = sub.add_parser("list", help="Liste les matchs prêts pour une story résultat")
     p_list.add_argument("--matchs", default=MATCHS_CSV_URL, help="URL du CSV publié de la sheet Matchs")
     p_list.add_argument("--out", default="-", help="Fichier de sortie JSON ('-' = stdout)")
+    p_list.add_argument(
+        "--window-only", action="store_true",
+        help="Ne fait rien (sort avec matches: []) si on est hors des créneaux de match "
+             "voulus (sam 12h-23h, dim 11h-17h, heure de Paris) — pour une tâche planifiée "
+             "qui tourne toutes les heures en continu.",
+    )
 
     p_mark = sub.add_parser("mark-done", help="Marque un match comme ayant sa story générée")
     p_mark.add_argument("--match-id", required=True)
@@ -120,6 +152,21 @@ def main():
     args = ap.parse_args()
 
     if args.command == "list":
+        if args.window_only and not in_scheduled_window():
+            now = datetime.now(PARIS_TZ)
+            print(
+                f"Hors créneau ({now.strftime('%A %H:%M')} heure de Paris) — "
+                "rien fait, pas même de lecture du CSV.",
+                file=sys.stderr,
+            )
+            out_text = json.dumps({"matches": [], "skipped_out_of_window": True}, ensure_ascii=False, indent=2)
+            if args.out == "-":
+                print(out_text)
+            else:
+                with open(args.out, "w", encoding="utf-8") as f:
+                    f.write(out_text)
+            return
+
         rows = _read_csv(args.matchs)
         eligible = find_eligible(rows)
         out_text = json.dumps({"matches": eligible}, ensure_ascii=False, indent=2)

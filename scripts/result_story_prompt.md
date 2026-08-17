@@ -36,14 +36,28 @@ pas dans cette liste, même si tu as par ailleurs son score.
 
 ## Phase 0 — Trouver les matchs à traiter
 
+Cette tâche est déclenchée toutes les heures en continu (le planificateur
+ne sait pas se limiter à des créneaux) — **toujours** passer
+`--window-only` : le script lui-même refuse de travailler hors des
+créneaux de match voulus (samedi 12h-23h, dimanche 11h-17h, heure de
+Paris) et sort immédiatement sans même lire le CSV. Ne retire jamais ce
+paramètre, y compris si tu penses "être sûr" d'être dans le bon créneau —
+c'est le script qui tranche, pas une estimation.
+
 ```
 curl -s -o result_stories.py https://raw.githubusercontent.com/sportingvillette-beep/sv-planning-entrainements/main/scripts/result_stories.py
-python3 result_stories.py list --out eligible.json
+python3 result_stories.py list --window-only --out eligible.json
 cat eligible.json
 ```
 
-Si la liste `matches` est vide : **rien à faire, arrête-toi là** et
-rapporte simplement "aucun match éligible" — ce n'est pas une erreur.
+Si la sortie contient `"skipped_out_of_window": true` : **hors créneau,
+rien à faire**, arrête-toi là et rapporte simplement l'heure à laquelle
+tu as vérifié — ce n'est pas une erreur, c'est le comportement normal la
+plupart des exécutions horaires.
+
+Si la liste `matches` est vide (mais qu'on est dans le créneau) :
+**rien à faire non plus, arrête-toi là** et rapporte "aucun match
+éligible" — ce n'est pas une erreur.
 
 Chaque entrée contient : `match_id` (identifiant à réutiliser en Phase 3),
 `equipe` (déjà au format `"M15G A"` — catégorie+genre collés, indice
