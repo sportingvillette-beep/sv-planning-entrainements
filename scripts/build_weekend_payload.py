@@ -314,16 +314,29 @@ def compute_context_stats(calendrier_rows, included_team_keys, saturday: date, s
     tout le fichier, et — pour les équipes qui jouent ce week-end — le nombre
     de jours avant leur prochain match programmé (indice possible d'une
     trêve à venir si ce délai est nettement plus long qu'une semaine)."""
+    # Les matchs amicaux/tournois (journee == "Amical", marqueur manuel -
+    # voir les 2 matchs M16F du tournoi de Blavozy ajoutes le 2026-08-17)
+    # sont exclus : un amical fin aout ne doit pas etre pris pour "le
+    # premier week-end de la saison", ni fausser le delai avant le
+    # prochain match officiel d'une equipe.
     all_dates = []
     by_team = {}
     for row in calendrier_rows:
+        if (row.get("journée", "") or "").strip().casefold() == "amical":
+            continue
         key = (row.get("section", ""), row.get("indice", ""), row.get("categorie", ""), row.get("phase", ""))
         dates = [d for d, _ in parse_french_dates(row.get("date/heure", ""))]
         all_dates.extend(dates)
         if key in included_team_keys:
             by_team.setdefault(key, []).extend(dates)
 
-    season_opening_weekend = bool(all_dates) and saturday <= min(all_dates)
+    # "min(all_dates) in (saturday, sunday)" et non "saturday <= min(...)" :
+    # la 2e version serait vraie pour N'IMPORTE QUEL week-end avant le debut
+    # de saison (ex. un week-end de juillet), pas seulement celui qui
+    # contient vraiment le tout premier match - bug reel, pas juste un
+    # probleme de matchs amicaux (trouve en testant le week-end du tournoi
+    # de Blavozy, qui a revele que la condition etait deja trop large).
+    season_opening_weekend = bool(all_dates) and min(all_dates) in (saturday, sunday)
 
     gaps_days = []
     teams_with_no_further_match = 0
