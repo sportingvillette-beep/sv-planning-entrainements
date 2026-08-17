@@ -217,6 +217,7 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
     pages = {p: [] for p in PAGE_ORDER}
     domicile = []
     warnings = []
+    included_team_keys = set()
 
     for row in calendrier_rows:
         section = row.get("section", "")
@@ -271,9 +272,11 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
             "recevant": recevant,
             "visiteur": visiteur,
             "lieu": lieu,
+            "journee": (row.get("journée", "") or "").strip(),
             "_sort": (CATEGORIE_SORT_ORDER.get(categorie, 99), GENRE_SORT_ORDER.get(genre, 9), indice),
         }
         pages[CATEGORIE_TO_PAGE[categorie]].append(entry)
+        included_team_keys.add((section, indice, categorie, phase))
 
         if confirmee and "villette d'anthon" in ville.casefold():
             domicile.append({k: entry[k] for k in ("equipe", "jour", "recevant", "visiteur", "_sort")})
@@ -287,6 +290,9 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
         del e["_sort"]
 
     pages_non_vides = {p: rows for p, rows in pages.items() if rows}
+    total_matches = sum(len(rows) for rows in pages_non_vides.values())
+    stats = compute_context_stats(calendrier_rows, included_team_keys, saturday, sunday)
+    stats["total_matches"] = total_matches
 
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -295,7 +301,46 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
         "sunday": sunday.isoformat(),
         "pages": pages_non_vides,
         "domicile": domicile,
+        "stats": stats,
         "warnings": warnings,
+    }
+
+
+def compute_context_stats(calendrier_rows, included_team_keys, saturday: date, sunday: date) -> dict:
+    """Quelques signaux dérivés du calendrier complet (pas juste ce week-end),
+    utiles pour rédiger un sous-titre contextuel sur la page de couverture :
+    nombre de matchs, s'agit-il du tout premier week-end avec un match dans
+    tout le fichier, et — pour les équipes qui jouent ce week-end — le nombre
+    de jours avant leur prochain match programmé (indice possible d'une
+    trêve à venir si ce délai est nettement plus long qu'une semaine)."""
+    all_dates = []
+    by_team = {}
+    for row in calendrier_rows:
+        key = (row.get("section", ""), row.get("indice", ""), row.get("categorie", ""), row.get("phase", ""))
+        dates = [d for d, _ in parse_french_dates(row.get("date/heure", ""))]
+        all_dates.extend(dates)
+        if key in included_team_keys:
+            by_team.setdefault(key, []).extend(dates)
+
+    season_opening_weekend = bool(all_dates) and saturday <= min(all_dates)
+
+    gaps_days = []
+    teams_with_no_further_match = 0
+    for key in included_team_keys:
+        future_dates = [d for d in by_team.get(key, []) if d > sunday]
+        if future_dates:
+            gaps_days.append((min(future_dates) - sunday).days)
+        else:
+            teams_with_no_further_match += 1
+
+    gaps_days.sort()
+    median_gap_days = gaps_days[len(gaps_days) // 2] if gaps_days else None
+
+    return {
+        "teams_playing_this_weekend": len(included_team_keys),
+        "season_opening_weekend": season_opening_weekend,
+        "median_days_to_next_match": median_gap_days,
+        "teams_with_no_further_match_scheduled": teams_with_no_further_match,
     }
 
 

@@ -53,9 +53,13 @@ Le JSON contient :
 - `pages` : un objet avec au plus les clés `"M7_M9"`, `"M11"`, `"M13"`,
   `"M15"`, `"M16_M17"`, `"M18"`, `"Seniors"` — **seules les clés avec au
   moins un match sont présentes**. Chaque valeur est une liste de lignes
-  `{equipe, jour, recevant, visiteur, lieu}`.
+  `{equipe, jour, recevant, visiteur, lieu, journee}` (`journee` = numéro
+  de journée FFHB, utile pour le contexte de la Phase 3, pas une colonne
+  à afficher dans le tableau).
 - `domicile` : liste de lignes `{equipe, jour, recevant, visiteur}`
   (matchs à domicile, toutes catégories, pour la page "à Villette").
+- `stats` : signaux contextuels pour la Phase 3 (sous-titre de
+  couverture) — voir cette phase pour le détail des champs.
 - `warnings` : anomalies détectées par le script (mapping équipe
   introuvable, etc.) — à reporter, pas à ignorer.
 
@@ -75,12 +79,13 @@ une copie.
    incomplète.
 3. Renomme le design copié : `"Post planning matchs — {weekend_label}"`
    (ex. `"Post planning matchs — 17 & 18 JAN."`).
-4. Déplace-le dans le dossier "AI Generated" (`folder_id: "FAHSb6QPbhA"`)
-   via `move-item-to-folder` — c'est là que Julien va chercher les posts
-   générés chaque semaine, ne saute pas cette étape. Si l'opération
-   échoue quand même, ne bloque pas le reste de la tâche pour autant,
-   mais signale-le bien en évidence dans ton rapport final (avec
-   l'`edit_url`, pour qu'il retrouve le design même mal rangé).
+4. Déplace-le dans le dossier Canva "Post hebdo planning matchs"
+   (`folder_id: "FAHSfQed5RE"`) via `move-item-to-folder` — c'est là que
+   Julien va chercher les posts générés chaque semaine, ne saute pas
+   cette étape. Si l'opération échoue quand même, ne bloque pas le reste
+   de la tâche pour autant, mais signale-le bien en évidence dans ton
+   rapport final (avec l'`edit_url`, pour qu'il retrouve le design même
+   mal rangé).
 
 Structure des 9 pages de ce design (fixe, toujours dans cet ordre) :
 
@@ -106,13 +111,44 @@ du match.
 Sur **chaque** page (1 à 9), il y a un texte de date au format
 `"17 & 18 JAN."` (grande police ~120pt, distinct du titre de catégorie
 et du texte "PLANNING DES MATCHS"). Remplace son contenu par
-`weekend_label` du JSON (`replace_text`). Ne touche à aucun autre texte
-de la page 1 (le sous-titre libre éventuel, s'il y en a un, doit rester
-tel quel — ce n'est pas généré automatiquement).
+`weekend_label` du JSON (`replace_text`).
 
 ---
 
-## Phase 3 — Remplir chaque page catégorie (pages 3 à 9)
+## Phase 3 — Rédiger le sous-titre de la page de couverture
+
+La page 1 a un texte libre sous le titre "PLANNING DES MATCHS" (sous la
+date, police normale, une phrase courte) que Julien personnalisait
+manuellement chaque semaine. Rédige-le toi-même à partir de
+`payload["stats"]` — une seule phrase courte en français, dans un
+registre club/réseaux sociaux (voir exemple ci-dessous), pas une
+description technique des chiffres.
+
+Champs disponibles dans `stats` :
+- `total_matches` : nombre de matchs ce week-end.
+- `season_opening_weekend` (bool) : `true` si c'est le tout premier
+  week-end de la saison avec un match programmé (aucun match plus tôt
+  dans tout le calendrier).
+- `median_days_to_next_match` : délai médian avant le prochain match des
+  équipes qui jouent ce week-end. Une valeur nettement supérieure à 7-8
+  jours (ex. 15+) suggère une trêve qui arrive juste après ce week-end.
+- `teams_with_no_further_match_scheduled` : nombre d'équipes qui jouent
+  ce week-end mais n'ont plus aucun match programmé après (fin de saison
+  ou de phase pour elles, ou calendrier pas encore publié plus loin).
+
+Choisis l'angle le plus pertinent (reprise de saison, trêve à venir,
+gros week-end si beaucoup de matchs, sinon une phrase neutre du type
+"Un week-end de matchs pour Sporting Villette"). Exemple de ton déjà
+utilisé par Julien : *"Week end 100% à l'exterieur pour nos jeunes"*
+(court, direct, pas de ponctuation lourde). Remplace le texte existant
+de ce sous-titre par ta phrase (`replace_text`) — s'il n'existe pas de
+texte libre distinct de la date/du titre sur cette page, n'invente pas
+un nouvel élément (pas d'`add_text`) : indique-le dans ton rapport final
+et passe à la suite sans bloquer.
+
+---
+
+## Phase 4 — Remplir chaque page catégorie (pages 3 à 9)
 
 Pour chaque page dans l'ordre (3, 4, 5, 6, 7, 8, 9), fais ce qui suit
 dans une transaction dédiée (`read-design` avec `open_transaction: true`,
@@ -198,33 +234,67 @@ scope `filter.page_indices` sur cette seule page pour rester léger) :
 
 ---
 
-## Phase 4 — Remplir la page 2 "à Villette" (matchs à domicile)
+## Phase 5 — Remplir la page 2 "à Villette" (matchs à domicile)
 
-Même procédure que la Phase 3, mais avec `json_rows = payload["domicile"]`,
+Même procédure que la Phase 4, mais avec `json_rows = payload["domicile"]`,
 sur les lignes à 4 colonnes (Équipe/Jour/Recevant/Visiteur, pas de "Lieu
 du match"). Si `domicile` est vide, applique le même traitement "Cas A"
 (message "Pas de match ce week-end", page conservée).
 
 ---
 
-## Phase 5 — Vérification finale
+## Phase 6 — Vérification finale
 
 Relis le design entier (9 pages, aucune supprimée) pour un contrôle
 visuel rapide : pas de chevauchement de texte visible, pages "pas de
-match" lisibles et bien centrées, dates cohérentes partout.
+match" lisibles et bien centrées, dates et sous-titre cohérents partout.
 
 **Ne publie rien, ne partage rien, n'envoie rien** sur Instagram ou
-ailleurs — cette tâche s'arrête à la génération du visuel dans Canva.
+ailleurs — cette tâche s'arrête à la génération du visuel et à son dépôt
+sur Drive (Phase 7). Déposer un fichier sur le Drive personnel de Julien
+n'est pas une publication publique, c'est autorisé sans confirmation
+supplémentaire dans le cadre de cette tâche récurrente déjà validée par
+lui.
+
+---
+
+## Phase 7 — Exporter en PNG et déposer sur Drive
+
+1. Exporte chaque page du design en PNG (`export-design`, `format.type:
+   "png"`, sans `pages` précisé pour exporter les 9 en une fois — vérifie
+   d'abord `get-export-formats` sur ce design si tu as un doute).
+2. Les URLs renvoyées sont **temporaires** (expirent en quelques heures) —
+   télécharge chaque fichier immédiatement plutôt que de te contenter de
+   garder les URLs de côté.
+3. Dépose les 9 fichiers PNG dans le dossier Google Drive **"Outils
+   informatiques/Temp posts Instagram"** du compte Google connecté (si
+   tu dois le retrouver par nom plutôt que par ID, cherche ce chemin
+   exact). Nomme chaque fichier de façon à ce que Julien s'y retrouve
+   facilement depuis son téléphone, ex. `01-couverture.png`,
+   `02-a-domicile.png`, `03-m7-m9.png`, `04-m11.png`, `05-m13.png`,
+   `06-m15.png`, `07-m16-m17.png`, `08-m18.png`, `09-seniors.png`
+   (numérotées dans l'ordre des pages, pour qu'elles s'affichent triées
+   sur son téléphone).
+4. Si le dossier n'existe pas encore à cet emplacement exact, crée-le
+   plutôt que d'improviser un autre emplacement, et signale-le dans ton
+   rapport.
+5. Si l'export ou le dépôt sur Drive échoue à un moment quelconque,
+   n'empêche pas le reste de la tâche d'avoir réussi — signale clairement
+   l'échec dans ton rapport final, avec l'`edit_url` du design Canva en
+   secours (Julien peut toujours exporter lui-même depuis l'appli Canva).
 
 ---
 
 ## Rapport final attendu
 
 - Le `edit_url` du design généré.
+- Le sous-titre rédigé en Phase 3 (texte exact utilisé).
 - La liste des pages remplies avec de vrais matchs vs celles passées en
   "Pas de match ce week-end" (et pourquoi).
 - Le contenu de `warnings` du JSON (Phase 0), s'il y en a.
 - Tout cas C rencontré (page trop petite pour le nombre de matchs).
+- Confirmation que les 9 PNG sont bien dans le dossier Drive (ou l'échec
+  rencontré, avec l'edit_url Canva en secours).
 - Toute erreur rencontrée à n'importe quelle étape, verbatim.
 
 Le design final a toujours 9 pages (aucune page n'est jamais supprimée).
