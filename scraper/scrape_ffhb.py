@@ -26,6 +26,69 @@ def sentence_case(s: str) -> str:
         return s
     return re.sub(r"(^|[-'’])(\w)", lambda m: m.group(1) + m.group(2).upper(), s)
 
+# NOTE : `strip_category_prefix` duplique volontairement la logique JS
+# `stripCategoryPrefix` d'index.html (et sa version Python dans
+# scripts/build_weekend_payload.py, qui doit rester autonome/fetchable seul
+# pour Cowork). Toute correction de cette regex doit être répercutée dans
+# les 3 endroits.
+_CATEGORY_PREFIX_RE = re.compile(r"^[A-Za-zÀ-ÿ]*\d[A-Za-zÀ-ÿ0-9]*\s+[A-ZÀ-Ÿ0-9]+\s*-\s*(.+)$")
+
+def strip_category_prefix(name: str) -> str:
+    """Retire un préfixe de poule FFHB en tête de nom d'équipe adverse, ex.
+    'M16F EXC - ENTENTE LYON EST HANDBALL' -> 'ENTENTE LYON EST HANDBALL'.
+    Heuristique best-effort (code de catégorie+niveau tout en majuscules
+    suivi d'un tiret) — peut nécessiter un ajustement sur un cas non vu."""
+    m = _CATEGORY_PREFIX_RE.match(name or "")
+    return m.group(1).strip() if m else (name or "")
+
+# Sigles de club confirmés dans les données réelles (Handball Club, Association
+# Sportive, Union Sportive, Club Sportif, Association Sportive Union Lyonnaise,
+# Union Omnisports du Dauphiné Libéré, Club Sportif Annecy Vieugy, Handball) —
+# à garder tels quels plutôt que de les casser en 'Hbc'/'As'/'Us'... Étendre
+# cette liste si un nouveau sigle apparaît dans les données (heuristique
+# best-effort, pas de règle générale fiable pour les distinguer d'un mot
+# court comme 'ST' qui, lui, doit être mis en casse de titre -> 'St').
+_KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB"}
+_FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
+# 'la'/'le'/'les' volontairement exclus : trop souvent le début d'un nom
+# propre composé dans les noms de club/lieu FFHB (ex. "Chambéry La Motte
+# Servolex", "Le Havre") plutôt qu'un article grammatical — les mettre en
+# minuscule casserait plus de cas réels que ça n'en corrigerait.
+_FR_ELISIONS = {"d", "l", "n", "j", "m", "t", "s", "c", "qu"}
+_ELISION_RE = re.compile(r"^(d|l|n|j|m|t|s|c|qu)['’](\w.*)$", re.IGNORECASE)
+
+def title_case_fr(name: str) -> str:
+    """Casse de titre best-effort pour un nom de club FFHB (souvent tout en
+    majuscules côté FFHB) : majuscule à chaque mot significatif, petits mots
+    de liaison (de/du/des/la/le/les/et/en) en minuscules sauf en tout début
+    de chaîne, article élidé (d'/l'/qu'...) en minuscules avec majuscule
+    juste après l'apostrophe (ex. "L'ISERE" -> "l'Isere"), sigles connus
+    (_KNOWN_ACRONYMS) inchangés. Contrairement à `sentence_case` (une seule
+    majuscule, adapté aux noms de lieux), un nom de club a besoin d'une
+    majuscule par mot."""
+    name = (name or "").strip()
+    if not name:
+        return name
+    words = []
+    for i, w in enumerate(name.split(" ")):
+        if not w:
+            words.append(w)
+            continue
+        core = re.sub(r"[^A-Za-zÀ-ÿ]", "", w)
+        if core and core.upper() == core and core in _KNOWN_ACRONYMS:
+            words.append(w)
+            continue
+        lw = w.lower()
+        if i > 0 and lw in _FR_LOWER_WORDS:
+            words.append(lw)
+            continue
+        elision = _ELISION_RE.match(lw)
+        if elision:
+            words.append(f"{elision.group(1)}'{elision.group(2)[0].upper()}{elision.group(2)[1:]}")
+            continue
+        words.append(re.sub(r"(^|[-'’(])(\w)", lambda m: m.group(1) + m.group(2).upper(), lw))
+    return " ".join(words)
+
 def parse_table_by_heading(soup: BeautifulSoup, heading_keywords: List[str]) -> Optional[pd.DataFrame]:
     for h in soup.find_all(re.compile(r"^h[1-6]$")):
         txt = clean_text(h.get_text(" "))
