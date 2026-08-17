@@ -327,6 +327,7 @@ function buildRecords(rowsRaw) {
       sessionsOrdered,
       anneesNaissance: clean(row['Années de naissance']),
       prixLicence: clean(row['Prix_Licence']),
+      descriptionEquipe: clean(row['Description']),
       entraineurs,
       p1: { niveau: clean(row['P1.Niveau']), poule: clean(row['P1.Poule']), lien: clean(row['P1.Lien']) },
       p2: { niveau: clean(row['P2.Niveau']), poule: clean(row['P2.Poule']), lien: clean(row['P2.Lien']) },
@@ -476,9 +477,52 @@ ${rows}
 // Même contrainte que renderEquipeMinimal (l'éditeur SportsRégions ne garde que
 // color/background-color en style inline, plus br/b/i ; les attributs HTML
 // (border, cellpadding, cellspacing) survivent car ce ne sont pas des styles CSS.
-function renderEquipeFicheSportsRegions(r) {
+// classementsRows = lignes de data/classements_club.csv (déjà parsées) — sert uniquement à
+// lister les clubs de la poule, pas de classement/points affiché (périmerait trop vite entre
+// 2 générations de fiche, décision explicite de Julien).
+// Bandeau de section = même style que l'en-tête du tableau d'entraînements (fond sombre,
+// texte blanc) pour rester cohérent visuellement, mais en <p> plutôt qu'un <table> à une
+// cellule : plus simple, et un <p> avec background-color survit tout autant au filtrage de
+// l'éditeur SportsRégions (voir commentaire de tête de fonction). <p>&nbsp;</p> plutôt qu'un
+// <p></p> vide pour le saut de ligne avant le bandeau : un paragraphe réellement vide risque
+// d'être collapsé/nettoyé par l'éditeur (pas testé, mais pattern plus sûr par défaut). 1 seul
+// paragraphe vide (2 essayés puis jugés trop aérés par Julien).
+function ficheSectionBanner(title) {
+  return `<p>&nbsp;</p><p style="background-color:#1a1a1a;color:#ffffff"><b>${title}</b></p>`;
+}
+
+// Indente le contenu sous chaque bandeau d'une "tabulation" (demandé par Julien pour
+// distinguer visuellement titre/contenu) — via &nbsp; répétés plutôt qu'un style CSS
+// (margin/padding/text-indent ne survivent PAS au filtrage de l'éditeur SportsRégions,
+// contrairement à color/background-color, voir commentaire de tête de fonction). Appliqué
+// ligne par ligne (pas juste en tête de paragraphe) pour que chaque <br> reste indenté.
+const TAB_INDENT = '&nbsp;&nbsp;&nbsp;&nbsp;';
+function indentedLines(lines) {
+  return lines.map(l => TAB_INDENT + l).join('<br>');
+}
+
+function renderEquipeFicheSportsRegions(r, classementsRows) {
   const label = r.categorie + (r.indice ? ' ' + r.indice : '');
   const sectionColor = SECTION_COLORS[r.section] || DEFAULT_SECTION_COLOR;
+
+  // r.descriptionEquipe vient de la colonne "Description équipe" (AC) du Google Sheet,
+  // remplie manuellement par Julien équipe par équipe — vide tant que non renseignée (pas de
+  // texte de substitution générique poussé sur le site en prod, cf discussion : le lorem
+  // ipsum n'a servi que pour valider le design en aperçu).
+  const presentationBlock = r.descriptionEquipe ? `<p>${r.descriptionEquipe}</p>` : '';
+
+  function fmtPrix(p) {
+    if (!p) return '';
+    const n = parseFloat(String(p).replace(',', '.'));
+    if (isNaN(n)) return p;
+    return (Number.isInteger(n) ? n : n.toFixed(2)) + ' €';
+  }
+  const metaParts = [];
+  if (r.anneesNaissance) metaParts.push(`Années de naissance : ${r.anneesNaissance}`);
+  if (r.prixLicence) metaParts.push(`Prix de la licence : ${fmtPrix(r.prixLicence)}`);
+  const infosBlock = metaParts.length
+    ? `${ficheSectionBanner('Informations générales')}<p>${indentedLines(metaParts)}</p>`
+    : '';
 
   const trainRows = DAYS.map(d => r.cells[d].map(s => {
     const color = VILLE_COLORS[s.ville] || DEFAULT_VILLE_COLOR;
@@ -487,28 +531,54 @@ function renderEquipeFicheSportsRegions(r) {
       : `<i>${s.ville}</i>`;
     return `<tr><td><b>${d}</b></td><td>${s.deb}–${s.fin}</td><td>${lieuPart}</td></tr>`;
   }).join('')).join('');
-  const trainBlock = trainRows
+  const trainBlock = ficheSectionBanner("Créneaux d'entraînement") + (trainRows
     ? `<table border="1" cellpadding="6" cellspacing="0">
 <tr><th style="background-color:#1a1a1a;color:#ffffff">Jour</th><th style="background-color:#1a1a1a;color:#ffffff">Horaire</th><th style="background-color:#1a1a1a;color:#ffffff">Lieu</th></tr>
 ${trainRows}
 </table>`
-    : `<p><i>Aucun créneau renseigné.</i></p>`;
+    : `<p><i>Aucun créneau renseigné.</i></p>`);
 
   const coachBlock = r.entraineurs.length
-    ? `<p><b>Entraîneur${r.entraineurs.length > 1 ? 's' : ''} :</b> ${r.entraineurs.join(', ')}</p>`
+    ? `${ficheSectionBanner('Entraîneurs')}<p>${indentedLines(r.entraineurs)}</p>`
     : '';
 
-  function champLine(phaseLabel, phase) {
+  const bothPhases = !!(r.p1.niveau && r.p2.niveau);
+  function pouleClubs(phaseKey) {
+    // cleanOpponentLabel (définie plus bas dans ce fichier, hissée par la déclaration
+    // function) retire le préfixe de poule et l'indice d'équipe éventuel des noms bruts
+    // FFHB de classements_club.csv — même nettoyage que pour l'adversaire dans les vues
+    // calendrier/résultats. Ne corrige pas la casse (TOUT MAJUSCULES côté FFHB) : ce
+    // fichier n'a pas d'équivalent JS de title_case_fr() (scraper Python uniquement).
+    return classementsRows
+      .filter(c => (c['section'] || '') === (r.section || '')
+        && (c['indice'] || '') === (r.indice || '')
+        && (c['categorie'] || '') === (r.categorie || '')
+        && (c['phase'] || '') === phaseKey)
+      .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0))
+      .map(c => cleanOpponentLabel(c['Club']));
+  }
+  function champLine(phaseLabel, phaseKey, phase) {
     if (!phase.niveau) return '';
     const poulePart = phase.poule ? ` (poule ${phase.poule})` : '';
-    const linkPart = phase.lien ? `<br><a href="${phase.lien}" target="_blank" rel="noopener">Voir la poule sur FFHB</a>` : '';
-    return `<p><b>${phaseLabel} :</b> ${phase.niveau}${poulePart}${linkPart}</p>`;
+    const lines = [`<b>${phaseLabel} :</b> ${phase.niveau}${poulePart}`];
+    if (phase.lien) lines.push(`<a href="${phase.lien}" target="_blank" rel="noopener">Voir la poule sur FFHB</a>`);
+    const clubs = pouleClubs(phaseKey);
+    if (clubs.length) {
+      lines.push(''); // ligne vide avant "Équipes de la poule" (encore trop serré sans ça)
+      lines.push(`<b>Équipes de la poule${bothPhases ? ' (' + phaseLabel + ')' : ''} :</b>`);
+      lines.push(...clubs);
+    }
+    return `<p>${indentedLines(lines)}</p>`;
   }
-  const champBlock = champLine('Phase 1', r.p1) + champLine('Phase 2', r.p2);
+  const champLines = champLine('Phase 1', 'P1', r.p1) + champLine('Phase 2', 'P2', r.p2);
+  const champBlock = champLines ? `${ficheSectionBanner('Championnat(s)')}${champLines}` : '';
 
   return `<p><span style="color:${sectionColor}"><b>${r.section}</b></span> — <b>${label}</b></p>
+${presentationBlock}
+${infosBlock}
 ${trainBlock}
-${coachBlock}${champBlock}`;
+${coachBlock}
+${champBlock}`;
 }
 
 // ---------- 3) VERSION PAR GYMNASE ----------
