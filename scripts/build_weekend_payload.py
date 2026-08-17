@@ -273,13 +273,14 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
             "visiteur": visiteur,
             "lieu": lieu,
             "journee": (row.get("journée", "") or "").strip(),
+            "us_side": "recevant" if us_home else "visiteur",
             "_sort": (CATEGORIE_SORT_ORDER.get(categorie, 99), GENRE_SORT_ORDER.get(genre, 9), indice),
         }
         pages[CATEGORIE_TO_PAGE[categorie]].append(entry)
         included_team_keys.add((section, indice, categorie, phase))
 
         if confirmee and "villette d'anthon" in ville.casefold():
-            domicile.append({k: entry[k] for k in ("equipe", "jour", "recevant", "visiteur", "_sort")})
+            domicile.append({k: entry[k] for k in ("equipe", "jour", "recevant", "visiteur", "us_side", "_sort")})
 
     for p in pages:
         pages[p].sort(key=lambda e: e["_sort"])
