@@ -53,11 +53,13 @@ Le JSON contient :
 - `pages` : un objet avec au plus les clés `"M7_M9"`, `"M11"`, `"M13"`,
   `"M15"`, `"M16_M17"`, `"M18"`, `"Seniors"` — **seules les clés avec au
   moins un match sont présentes**. Chaque valeur est une liste de lignes
-  `{equipe, jour, recevant, visiteur, lieu, journee}` (`journee` = numéro
-  de journée FFHB, utile pour le contexte de la Phase 3, pas une colonne
-  à afficher dans le tableau).
-- `domicile` : liste de lignes `{equipe, jour, recevant, visiteur}`
-  (matchs à domicile, toutes catégories, pour la page "à Villette").
+  `{equipe, jour, recevant, visiteur, lieu, journee, us_side}` (`journee`
+  = numéro de journée FFHB, utile pour le contexte de la Phase 3, pas une
+  colonne à afficher ; `us_side` = `"recevant"` ou `"visiteur"`, indique
+  lequel des deux est notre club — utile en Phase 4 pour le souligner).
+- `domicile` : liste de lignes `{equipe, jour, recevant, visiteur,
+  us_side}` (matchs à domicile, toutes catégories, pour la page "à
+  Villette").
 - `stats` : signaux contextuels pour la Phase 3 (sous-titre de
   couverture) — voir cette phase pour le détail des champs.
 - `warnings` : anomalies détectées par le script (mapping équipe
@@ -229,6 +231,12 @@ scope `filter.page_indices` sur cette seule page pour rester léger) :
 
       Utilise la hauteur réelle actuelle de chaque texte, pas une valeur
       supposée.
+   4. Souligne le texte de notre club pour qu'il ressorte visuellement :
+      `format_text` avec `formatting: {"decoration": "underline"}` sur le
+      texte Recevant si `us_side == "recevant"`, ou sur le texte Visiteur
+      si `us_side == "visiteur"` (jamais les deux, jamais l'autre côté).
+      Testé et validé visuellement — fonctionne bien y compris sur un nom
+      qui passe sur 2 lignes.
 
 4. Committe la transaction de cette page avant de passer à la suivante.
 
