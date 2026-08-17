@@ -454,6 +454,7 @@ formulaire fuite, ça ne compromet pas le secret du scraper) :
 | `add_photo` | POST multipart | `FORM_SHARED_SECRET` | Upload une photo (base64, voir leçon dédiée) dans le dossier Drive du match — **n'écrit plus `PhotoEq`** (alimente juste la galerie). |
 | `select_photo` | POST multipart | `FORM_SHARED_SECRET` | Marque une photo déjà uploadée comme *la* photo officielle (écrit `PhotoEq`) — sélection manuelle uniquement, jamais automatique. |
 | `list_photos` | GET | aucun | Liste toutes les photos du dossier Drive d'un match (donnée non sensible, déjà partagée "anyone with link"). |
+| `mark_story_done` | POST multipart | `FORM_SHARED_SECRET` | Écrit `Story résultat` (horodatage ISO par défaut, ou `p.value` si fourni) — marque qu'une story résultat a été générée pour ce match, pour que la génération automatique ne le retraite pas. Colonne réutilisée avec l'accord de Julien (voir note `Story*` ci-dessous). |
 
 ### Colonnes de la sheet "Matchs" (ordre exact, A → AF)
 
@@ -498,10 +499,16 @@ Score Source, Commentaire
   `add_photo` directement.
 - `Commentaire` : texte libre saisi depuis la page match, jamais verrouillé
   même si le score l'est.
-- `Story*`/`Story résultat` (pilotage de publication, hérité d'un ancien
-  flux Make) : **jamais touchées** par le scraper ni par les actions
-  ci-dessus — en dehors de leur périmètre, mécanisme de remplissage réel non
-  identifié.
+- `Story Insta`/`Get Story`/`Story avant match`/`Publier Story`/`Lien Story`
+  (pilotage de publication, hérité d'un ancien flux Make) : **toujours
+  orphelines**, jamais touchées par le scraper ni par les actions
+  ci-dessus, mécanisme de remplissage d'origine non identifié — ne pas s'y
+  fier ni les réutiliser sans vérifier au cas par cas.
+- `Story résultat` : **réutilisée depuis le 2026-08-17** (accord explicite
+  de Julien) comme marqueur "story résultat déjà générée" pour
+  l'automatisation Canva (voir action `mark_story_done` ci-dessus) — ce
+  n'est plus une colonne orpheline, ne pas la confondre avec les
+  `Story*` toujours mortes listées juste au-dessus.
 - `INSTA_Cat`/`INSTA_date`/`INSTA_Eq1`/`INSTA_Eq2`/`Insta_Ville` : remplies
   **uniquement à la création** de la ligne par le scraper (pensées à
   l'origine pour un futur Canva Bulk Create), jamais réécrites ensuite —

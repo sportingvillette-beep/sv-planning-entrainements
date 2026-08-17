@@ -83,6 +83,7 @@ function doPost(e) {
       if (p.action === 'add_score') return jsonResponse(updateScore(p));
       if (p.action === 'add_photo') return jsonResponse(addPhoto(p));
       if (p.action === 'select_photo') return jsonResponse(selectPhoto(p));
+      if (p.action === 'mark_story_done') return jsonResponse(markStoryDone(p));
       return jsonResponse({ ok: false, error: 'action inconnue: ' + p.action });
     }
 
@@ -292,6 +293,27 @@ function selectPhoto(p) {
   current[colIndex('PhotoEq')] = p.photo_url;
   rowRange.setValues([current]);
   return { ok: true, action: 'photo_selected', row: rowNumber };
+}
+
+/**
+ * Marque la story résultat d'un match comme générée (écrit 'Story résultat') — pour que
+ * la génération automatique (Cowork, voir scripts/find_result_stories.py) ne retraite pas
+ * deux fois le même match. Colonne "Story résultat" auparavant orpheline (héritée d'un
+ * ancien flux Make jamais reconnecté) — réutilisée ici avec l'accord explicite de Julien.
+ * p.value optionnel (sinon horodatage ISO) pour se laisser la possibilité d'y mettre autre
+ * chose qu'un simple horodatage plus tard (ex. un lien) sans changer la signature.
+ */
+function markStoryDone(p) {
+  if (!p.match_id) return { ok: false, error: 'match_id manquant' };
+  const sheet = getSheet();
+  const rowNumber = findRowByCode(sheet, p.match_id);
+  if (!rowNumber) return { ok: false, error: 'match introuvable: ' + p.match_id };
+
+  const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
+  const current = rowRange.getValues()[0];
+  current[colIndex('Story résultat')] = p.value || new Date().toISOString();
+  rowRange.setValues([current]);
+  return { ok: true, action: 'story_marked_done', row: rowNumber };
 }
 
 /**
