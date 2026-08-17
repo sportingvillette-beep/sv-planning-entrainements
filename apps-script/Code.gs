@@ -48,6 +48,8 @@ const SHEET_NAME = 'Matchs';
 const SHARED_SECRET = '7x!K9#vP2$mQ8%rL4*'; // remplacer avant déploiement — scraper uniquement
 const FORM_SHARED_SECRET = 'wpFt6IaS4QDZCodB'; // remplacer avant déploiement — formulaires publics uniquement
 const PHOTOS_FOLDER_ID = '1gwZToQYNPgDnDusnAAQtuHbff5fzPjTK'; // ID du dossier Drive "Photos matchs"
+const WEEKEND_POSTS_FOLDER_ID = '14eYhIkOoWk_zEX4T3_r9E6j8cPHHHo78'; // ID du dossier Drive "Temp posts Instagram"
+const RESULT_STORIES_FOLDER_ID = '1jR0mMICjSh32KhQhckiXwQiiGZBrwJFv'; // ID du dossier Drive "Temp stories Instagram"
 const PROGRESS_CACHE_KEY = 'scrape_progress';
 const PROGRESS_CACHE_TTL = 21600; // 6h (max autorisé par CacheService)
 
@@ -84,6 +86,7 @@ function doPost(e) {
       if (p.action === 'add_photo') return jsonResponse(addPhoto(p));
       if (p.action === 'select_photo') return jsonResponse(selectPhoto(p));
       if (p.action === 'mark_story_done') return jsonResponse(markStoryDone(p));
+      if (p.action === 'add_asset') return jsonResponse(addAsset(p));
       return jsonResponse({ ok: false, error: 'action inconnue: ' + p.action });
     }
 
@@ -314,6 +317,39 @@ function markStoryDone(p) {
   current[colIndex('Story résultat')] = p.value || new Date().toISOString();
   rowRange.setValues([current]);
   return { ok: true, action: 'story_marked_done', row: rowNumber };
+}
+
+/**
+ * Dépose un fichier (PNG de post/story Canva) dans un sous-dossier d'un des deux dossiers
+ * Drive dédiés (Temp posts Instagram / Temp stories Instagram — mêmes dossiers que ceux
+ * visibles dans "Outils informatiques", sur le compte propriétaire de ce script). Générique
+ * plutôt qu'une action par pipeline : p.kind sélectionne le dossier racine, p.subfolder
+ * regroupe les fichiers d'un même run (ex. le weekend_label pour le post hebdo, le match_id
+ * pour une story résultat). Même mécanique base64 qu'addPhoto (voir sa docstring pour le
+ * détail du pourquoi base64 plutôt que Blob multipart), même partage "anyone with link" pour
+ * que Julien puisse ouvrir le fichier directement depuis le lien renvoyé, sans avoir besoin
+ * d'accéder à ce compte Drive lui-même.
+ */
+function addAsset(p) {
+  if (!p.kind) return { ok: false, error: 'kind manquant' };
+  if (!p.subfolder) return { ok: false, error: 'subfolder manquant' };
+  if (!p.file_base64) return { ok: false, error: 'fichier manquant' };
+
+  const rootFolderId = p.kind === 'weekend_post' ? WEEKEND_POSTS_FOLDER_ID
+    : p.kind === 'result_story' ? RESULT_STORIES_FOLDER_ID
+    : null;
+  if (!rootFolderId) return { ok: false, error: 'kind inconnu: ' + p.kind };
+
+  const bytes = Utilities.base64Decode(p.file_base64);
+  const blob = Utilities.newBlob(bytes, p.file_type || 'image/png', p.file_name || 'asset.png');
+
+  const parentFolder = DriveApp.getFolderById(rootFolderId);
+  const subfolder = getOrCreateSubfolder(parentFolder, p.subfolder);
+  const file = subfolder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const url = 'https://lh3.googleusercontent.com/d/' + file.getId();
+
+  return { ok: true, action: 'asset_added', url: url, fileId: file.getId() };
 }
 
 /**

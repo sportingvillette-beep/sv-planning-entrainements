@@ -102,26 +102,44 @@ toujours travailler sur une copie.
 6. Committe la transaction.
 7. Exporte le design en PNG pleine résolution (`export-design`,
    `format.type: "png"`) — l'URL de téléchargement est **temporaire**
-   (quelques heures), télécharge-la si tu en as la capacité, sinon
-   indique l'URL dans ton rapport avec un avertissement clair sur son
-   expiration.
-8. Marque le match comme traité, seulement après confirmation que
-   l'export PNG a réussi :
+   (quelques heures), télécharge-la immédiatement. **Si le téléchargement
+   échoue** (ex. domaine `export-download.canva.com` inaccessible depuis
+   ton environnement) : n'insiste pas, passe directement à l'étape 10
+   (échec à signaler) — les étapes 8 et 9 deviennent sans objet sans le
+   fichier en main.
+8. Dépose le PNG téléchargé dans Drive via `deposit_drive_asset.py` (pas
+   d'accès direct à Google Drive) :
+   ```
+   curl -s -o deposit_drive_asset.py https://raw.githubusercontent.com/sportingvillette-beep/sv-planning-entrainements/main/scripts/deposit_drive_asset.py
+   python3 deposit_drive_asset.py --kind result_story --subfolder "<match_id>" --file story.png
+   ```
+   Garde l'URL renvoyée (`{"ok": true, "url": "..."}`) pour le rapport
+   final — lien direct cliquable depuis le téléphone de Julien.
+9. Marque le match comme traité, seulement après confirmation que le
+   dépôt Drive a réussi (pas juste l'export) :
    ```
    python3 result_stories.py mark-done --match-id "<match_id>"
    ```
-   Ne marque JAMAIS un match comme traité si l'export a échoué — mieux
-   vaut le retraiter au prochain passage qu'en perdre la trace.
+   Ne marque JAMAIS un match comme traité si l'export ou le dépôt a
+   échoué — mieux vaut le retraiter au prochain passage qu'en perdre la
+   trace.
+10. Si l'export, le téléchargement ou le dépôt Drive échoue à un moment
+    quelconque : ne marque pas le match traité, signale l'échec verbatim
+    dans le rapport final, avec l'`edit_url` du design Canva en secours.
 
-**Ne publie rien, ne partage rien** — cette tâche s'arrête à la
-génération du visuel. La publication reste une décision de Julien.
+**Ne publie rien, ne partage rien** sur Instagram ou ailleurs — cette
+tâche s'arrête à la génération du visuel et à son dépôt sur Drive (étape
+8). Déposer un fichier sur le Drive associatif de Julien n'est pas une
+publication publique, c'est autorisé sans confirmation supplémentaire
+dans le cadre de cette tâche récurrente déjà validée par lui. La
+publication Instagram elle-même reste une décision de Julien.
 
 ---
 
 ## Rapport final attendu
 
-- Pour chaque match traité : `edit_url` du design généré, confirmation
-  export PNG + marquage effectué.
+- Pour chaque match traité : `edit_url` du design généré, lien Drive du
+  PNG déposé, confirmation du marquage effectué.
 - La liste des matchs trouvés éligibles mais pas traités (avec la
   raison, ex. erreur d'export).
 - Toute erreur rencontrée à n'importe quelle étape, verbatim.
