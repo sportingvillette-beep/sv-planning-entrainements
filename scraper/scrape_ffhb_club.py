@@ -509,6 +509,56 @@ def _merge_by_key(prev: pd.DataFrame, new: pd.DataFrame, key_cols: list) -> pd.D
     keep_mask = ~prev_keys.apply(lambda r: tuple(r) in new_keys, axis=1)
     return pd.concat([prev[keep_mask], new], ignore_index=True)
 
+def run_resync_sheet(mapping_dir: str, outdir: str, teams_filter: str):
+    """Renvoie vers la sheet 'Matchs' (upsert add_match, par code FFHB) tous les
+    matchs déjà présents dans data/calendrier_club.csv, SANS re-scraper FFHB —
+    juste une relecture des CSV locaux + build_match_payload() + post. Sert à
+    corriger rétroactivement des lignes déjà écrites dans la sheet après une
+    évolution de build_match_payload() (ex. casse des noms d'adversaires,
+    2026-08-17) : les futurs scrapes auraient la bonne casse de toute façon,
+    ceci corrige l'historique déjà écrit sans attendre que chaque match soit
+    re-scrapé naturellement. Idempotent (re-lancer plusieurs fois ne fait que
+    ré-écraser les mêmes valeurs)."""
+    mapping_path = os.path.join(mapping_dir, "team_mapping.csv")
+    calendrier_path = os.path.join(outdir, "calendrier_club.csv")
+    if not os.path.exists(mapping_path):
+        print("⚠ Aucun team_mapping.csv trouvé.")
+        sys.exit(1)
+    if not os.path.exists(calendrier_path):
+        print("⚠ Aucun calendrier_club.csv trouvé — rien à resynchroniser.")
+        sys.exit(1)
+
+    mapping = pd.read_csv(mapping_path, encoding="utf-8-sig")
+    mapping["equipe_ffhb_proposee"] = mapping["equipe_ffhb_proposee"].fillna("").astype(str).str.strip()
+    mapping = mapping[mapping["equipe_ffhb_proposee"] != ""]
+
+    ids_filter = [s.strip() for s in teams_filter.split(",") if s.strip()] if teams_filter else []
+    if ids_filter:
+        mapping = mapping[mapping["id"].isin(ids_filter)]
+    if mapping.empty:
+        print("⚠ Aucune équipe à traiter (mapping vide ou filtre sans correspondance).")
+        sys.exit(1)
+
+    calendrier = pd.read_csv(calendrier_path, encoding="utf-8-sig")
+    for col in ("section", "indice", "categorie", "phase"):
+        calendrier[col] = calendrier[col].fillna("").astype(str)
+
+    total_ok = 0
+    for _, t in mapping.iterrows():
+        t_indice = "" if pd.isna(t["indice"]) else str(t["indice"])
+        mask = (
+            (calendrier["section"] == str(t["section"]))
+            & (calendrier["indice"] == t_indice)
+            & (calendrier["categorie"] == str(t["categorie"]))
+            & (calendrier["phase"] == str(t["phase"]))
+        )
+        team_calendrier = calendrier[mask]
+        n_ok = sync_matches_to_sheet(team_calendrier, t)
+        if n_ok:
+            print(f"  ✔ {t['id']}: {n_ok} match(s) resynchronisé(s).")
+        total_ok += n_ok
+    print(f"Total : {total_ok} match(s) resynchronisé(s) vers la sheet Matchs.")
+
 def run_club_scrape_ci(mapping_dir: str, outdir: str, teams_filter: str):
     """Scrape non interactif pour CI. Ne remplace que les équipes concernées dans les
     fichiers de sortie (les autres équipes gardent leurs données du run précédent) et
@@ -608,11 +658,18 @@ def main():
         p_scrape.add_argument("--outdir", default="data")
         p_scrape.add_argument("--teams", default="", help="IDs séparés par des virgules (vide = toutes)")
 
+        p_resync = sub.add_parser("resync-sheet", help="Renvoie les matchs déjà scrapés vers la sheet Matchs (upsert, sans re-scraper FFHB) — pour corriger rétroactivement des lignes déjà écrites")
+        p_resync.add_argument("--mapping-dir", default="scraper")
+        p_resync.add_argument("--outdir", default="data")
+        p_resync.add_argument("--teams", default="", help="IDs séparés par des virgules (vide = toutes)")
+
         args = parser.parse_args()
         if args.command == "sync-mapping":
             sync_mapping(args.mapping_dir)
         elif args.command == "scrape":
             run_club_scrape_ci(args.mapping_dir, args.outdir, args.teams)
+        elif args.command == "resync-sheet":
+            run_resync_sheet(args.mapping_dir, args.outdir, args.teams)
         return
 
     print("Bonjour 👋 — Scraper FFHB club")
