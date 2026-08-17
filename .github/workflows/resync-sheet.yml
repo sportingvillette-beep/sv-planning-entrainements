@@ -1,0 +1,46 @@
+name: Resync sheet Matchs (sans re-scraper)
+
+# Renvoie tous les matchs déjà scrapés (data/calendrier_club.csv) vers la sheet
+# "Matchs" via add_match (upsert par code FFHB), SANS re-scraper FFHB — juste
+# une relecture des CSV du repo + build_match_payload() + post. Sert à corriger
+# rétroactivement des lignes déjà écrites dans la sheet après une évolution de
+# build_match_payload() (ex. casse des noms d'adversaires, 2026-08-17), sans
+# attendre que chaque match soit re-scrapé naturellement par le cron quotidien.
+# Déclenchement manuel uniquement (workflow_dispatch) — pas de cron, cette
+# tâche n'a de sens qu'ponctuellement après une correction de ce genre.
+
+on:
+  workflow_dispatch:
+    inputs:
+      teams:
+        description: "IDs équipes à resynchroniser, séparés par des virgules (vide = toutes)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  resync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r scraper/requirements.txt
+
+      - name: Resynchroniser la sheet Matchs
+        env:
+          SHEET_WEBAPP_URL: ${{ secrets.SHEET_WEBAPP_URL }}
+          SHEET_WEBAPP_SECRET: ${{ secrets.SHEET_WEBAPP_SECRET }}
+        run: |
+          python scraper/scrape_ffhb_club.py resync-sheet \
+            --mapping-dir scraper \
+            --outdir data \
+            --teams "${{ github.event.inputs.teams }}"
