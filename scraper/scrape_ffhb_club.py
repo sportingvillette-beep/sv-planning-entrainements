@@ -35,6 +35,8 @@ from scrape_ffhb import (
     enrich_salle,
     sentence_case,
     strip_postal_code,
+    strip_category_prefix,
+    title_case_fr,
     save_if,
 )
 
@@ -268,6 +270,16 @@ def split_trailing_index(name: str):
         return m.group(1).strip(" -"), m.group(2)
     return name, ""
 
+def _clean_opponent(raw: str):
+    """Prépare le nom de l'équipe adverse pour la sheet : retire un éventuel
+    préfixe de poule FFHB (ex. 'M16F EXC - '), isole un indice d'équipe en
+    suffixe (split_trailing_index ci-dessus), puis met le nom de base en
+    casse de titre (title_case_fr) plutôt que de garder la casse brute FFHB,
+    souvent tout en majuscules."""
+    stripped = strip_category_prefix((raw or "").strip())
+    base, idx = split_trailing_index(stripped)
+    return title_case_fr(base), idx
+
 def _s(v) -> str:
     """Convertit en chaîne en traitant NaN/None comme une chaîne vide (pandas transforme
     sinon un NaN en la chaîne littérale 'nan' via str())."""
@@ -294,10 +306,10 @@ def build_match_payload(row, t) -> dict:
     our_indice = _s(t.get("indice", ""))
     if us_is_domicile:
         eq1, eq1x = t["section"], our_indice
-        eq2, eq2x = split_trailing_index(exterieur)
+        eq2, eq2x = _clean_opponent(exterieur)
     else:
         eq2, eq2x = t["section"], our_indice
-        eq1, eq1x = split_trailing_index(domicile)
+        eq1, eq1x = _clean_opponent(domicile)
 
     date_ddmmyyyy, heure = parse_confirmed_date(_s(row.get("date/heure", "")))
 

@@ -51,6 +51,18 @@ MONTH_ABBR_FR = {
 }
 WEEKDAY_ABBR_FR = {5: "Sam", 6: "Dim"}  # Python weekday(): Monday=0..Sunday=6
 
+# Sigles de club confirmés dans les données réelles — à garder tels quels
+# plutôt que de les casser en 'Hbc'/'As'/'Us' (voir title_case_fr). Étendre
+# si un nouveau sigle apparaît (heuristique best-effort, cf.
+# scraper/scrape_ffhb.py où cette liste est dupliquée à l'identique).
+KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB"}
+FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
+# 'la'/'le'/'les' volontairement exclus : trop souvent le début d'un nom
+# propre composé dans les noms de club/lieu FFHB (ex. "Chambéry La Motte
+# Servolex", "Le Havre") plutôt qu'un article grammatical — les mettre en
+# minuscule casserait plus de cas réels que ça n'en corrigerait.
+ELISION_RE = re.compile(r"^(d|l|n|j|m|t|s|c|qu)['’](\w.*)$", re.IGNORECASE)
+
 # Regroupement des catégories en pages du gabarit Canva (ordre = ordre des
 # pages 3 à 9 du design DAHSb3SEpJ4). Catégories volontairement absentes
 # (pas de championnat) : M5, Loisirs, Handfit.
@@ -101,9 +113,43 @@ def split_trailing_index(name: str):
     return name, ""
 
 
+def title_case_fr(name: str) -> str:
+    """Casse de titre best-effort pour un nom de club FFHB (souvent tout en
+    majuscules côté FFHB) : majuscule à chaque mot significatif, petits mots
+    de liaison (de/du/des/la/le/les/et/en) en minuscules sauf en tout début
+    de chaîne, article élidé (d'/l'/qu'...) en minuscules avec majuscule
+    juste après l'apostrophe (ex. "L'ISERE" -> "l'Isere"), sigles connus
+    (KNOWN_ACRONYMS) inchangés. Dupliqué depuis scraper/scrape_ffhb.py (ce
+    fichier doit rester autonome/fetchable seul pour Cowork) — toute
+    correction doit être répercutée dans les 2 endroits."""
+    name = (name or "").strip()
+    if not name:
+        return name
+    words = []
+    for i, w in enumerate(name.split(" ")):
+        if not w:
+            words.append(w)
+            continue
+        core = re.sub(r"[^A-Za-zÀ-ÿ]", "", w)
+        if core and core.upper() == core and core in KNOWN_ACRONYMS:
+            words.append(w)
+            continue
+        lw = w.lower()
+        if i > 0 and lw in FR_LOWER_WORDS:
+            words.append(lw)
+            continue
+        elision = ELISION_RE.match(lw)
+        if elision:
+            words.append(f"{elision.group(1)}'{elision.group(2)[0].upper()}{elision.group(2)[1:]}")
+            continue
+        words.append(re.sub(r"(^|[-'’(])(\w)", lambda m: m.group(1) + m.group(2).upper(), lw))
+    return " ".join(words)
+
+
 def clean_opponent_label(raw: str) -> str:
     stripped = strip_category_prefix((raw or "").strip())
     base, idx = split_trailing_index(stripped)
+    base = title_case_fr(base)
     return f"{base} - {idx}" if idx else base
 
 
