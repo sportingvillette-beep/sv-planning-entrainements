@@ -99,7 +99,11 @@ E3.Lieu, E3.Jour, E3. Debut, E3.Fin,
 E4.Lieu, E4.Jour, E4. Debut, E4.Fin,
 Entraineur1, Entraineur2, Entraineur3, Entraineur4,
 P1.Niveau, P1.Lien, P1.Poule,   (Phase 1 de championnat — P1.Lien pointe vers une page de poule FFHB)
-P2.Niveau, P2.Lien, P2.Poule    (Phase 2, souvent vide en début de saison)
+P2.Niveau, P2.Lien, P2.Poule,   (Phase 2, souvent vide en début de saison)
+... (colonne AG) Description           (texte libre, saisi par Julien équipe par équipe — utilisé
+                                        par la fiche SportsRégions ; lu par nom d'en-tête exact
+                                        "Description" — pas "Description équipe" malgré le nom
+                                        donné à la colonne dans le Sheet, ni par position)
 ```
 
 - `Lieu` est au format `"Ville - Gymnase"` (ex. `"Genas - Halle des Sports"`),
