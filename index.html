@@ -1123,8 +1123,12 @@ function renderCalendriersClassementsPage(mappingRows, classementsRows, calendri
   // (push_calendriers_classements.py, split_intro_and_generated) — toujours régénérée avec le
   // tableau, jamais absente, sinon la frontière intro/généré dérive d'un run à l'autre (même
   // piège que documenté pour la page planning entraînements).
+  // align="center" (attribut HTML historique, pas un style CSS) plutôt que margin:auto — même
+  // raison que border/cellpadding/cellspacing ailleurs dans ce fichier : survit au filtrage de
+  // l'éditeur SportsRégions, contrairement à une règle CSS. Demandé par Julien (2026-08-20),
+  // page rendue alignée à gauche sans ça.
   return `<p>&nbsp;</p>
-<table border="1" cellpadding="6" cellspacing="0">
+<table align="center" border="1" cellpadding="6" cellspacing="0">
 <tr><th style="background-color:#1a1a1a;color:#ffffff">Équipe</th><th style="background-color:#1a1a1a;color:#ffffff">Phase</th><th style="background-color:#1a1a1a;color:#ffffff">Journées jouées</th><th style="background-color:#1a1a1a;color:#ffffff">Niveau</th><th style="background-color:#1a1a1a;color:#ffffff">Lien</th><th style="background-color:#1a1a1a;color:#ffffff">Classement</th></tr>
 ${rows}
 </table>`;
