@@ -40,7 +40,11 @@ explicite de Julien, 2026-08-18).
 from __future__ import annotations
 
 import argparse
+import datetime
+import json
+import os
 import sys
+import urllib.request
 
 from playwright.sync_api import sync_playwright, Page
 
@@ -99,6 +103,39 @@ def generate_fiches(page: Page, site_url: str) -> list[dict]:
     return page.evaluate(GENERATE_JS)
 
 
+_RUN_STARTED_AT = None
+
+
+def post_progress(team_index=0, team_total=0, team_label="", done=False, error=None):
+    """Remonte une progression au Web App Apps Script (action `progress_sportsregions`,
+    même mécanisme de CacheService que le scraper FFHB — voir CLAUDE.md du repo, section
+    "Barre de progression"). Best-effort, ne doit jamais faire échouer le run : sans effet si
+    SHEET_WEBAPP_URL/SHEET_WEBAPP_SECRET absentes (ex. run local sans ces variables définies)."""
+    url = os.environ.get("SHEET_WEBAPP_URL", "").strip()
+    secret = os.environ.get("SHEET_WEBAPP_SECRET", "").strip()
+    if not url or not secret or not _RUN_STARTED_AT:
+        return
+    payload = {
+        "secret": secret,
+        "action": "progress_sportsregions",
+        "progress": {
+            "started_at": _RUN_STARTED_AT,
+            "team_index": team_index,
+            "team_total": team_total,
+            "team_label": team_label,
+            "done": done,
+            "error": error,
+        },
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15):
+            pass
+    except Exception:
+        pass
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="Génère et affiche le HTML de chaque équipe, ne pousse rien (pas de connexion SportsRégions)")
@@ -145,9 +182,16 @@ def main() -> None:
             browser.close()
             return
 
+        global _RUN_STARTED_AT
+        _RUN_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        # +1 unité pour le planning entraînements, poussé après les fiches (voir plus bas).
+        progress_total = len(targets) + 1
+        post_progress(0, progress_total, "")
+
         saison_value = SAISON_VALUES[SAISON]
         ok, fail = 0, []
-        for name, r in targets:
+        for i, (name, r) in enumerate(targets):
+            post_progress(i + 1, progress_total, name)
             # find_team_id ET update_team_content dans le même try : les deux font des
             # page.goto, donc les deux peuvent subir un timeout réseau transitoire (constaté le
             # 2026-08-18, net::ERR_TIMED_OUT en plein lot) — un échec sur l'un ou l'autre doit
@@ -191,12 +235,20 @@ def main() -> None:
         # Lot complet uniquement (pas --team) : enchaîne la mise à jour du planning
         # entraînements, même navigateur/session déjà authentifiés (demande de Julien,
         # 2026-08-18 — un seul point d'entrée pour tout le contenu SportsRégions généré).
+        planning_error = None
         if not args.team:
+            post_progress(progress_total, progress_total, "Planning entraînements")
             try:
                 push_planning(page, args.site)
                 print('>>> Page "Planning entrainements" mise à jour.', file=sys.stderr)
             except Exception as e:
-                print(f'!!! Échec de la mise à jour du planning entraînements : {e}', file=sys.stderr)
+                planning_error = str(e)
+                print(f'!!! Échec de la mise à jour du planning entraînements : {planning_error}', file=sys.stderr)
+
+        post_progress(
+            progress_total, progress_total, "", done=True,
+            error=(", ".join(fail) if fail else None) or planning_error,
+        )
 
         browser.close()
 

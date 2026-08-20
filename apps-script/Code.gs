@@ -51,6 +51,7 @@ const PHOTOS_FOLDER_ID = '1gwZToQYNPgDnDusnAAQtuHbff5fzPjTK'; // ID du dossier D
 const WEEKEND_POSTS_FOLDER_ID = '14eYhIkOoWk_zEX4T3_r9E6j8cPHHHo78'; // ID du dossier Drive "Temp posts Instagram"
 const RESULT_STORIES_FOLDER_ID = '1jR0mMICjSh32KhQhckiXwQiiGZBrwJFv'; // ID du dossier Drive "Temp stories Instagram"
 const PROGRESS_CACHE_KEY = 'scrape_progress';
+const PROGRESS_CACHE_KEY_SPORTSREGIONS = 'sportsregions_progress'; // clé distincte du scraper FFHB, même mécanisme
 const PROGRESS_CACHE_TTL = 21600; // 6h (max autorisé par CacheService)
 
 // Ordre exact des colonnes du Sheet (A -> AF). Ne pas réordonner sans adapter le Sheet.
@@ -103,6 +104,12 @@ function doPost(e) {
       CacheService.getScriptCache().put(PROGRESS_CACHE_KEY, JSON.stringify(body.progress), PROGRESS_CACHE_TTL);
       return jsonResponse({ ok: true });
     }
+    if (body.action === 'progress_sportsregions') {
+      // Même mécanique que 'progress' (scraper FFHB) mais clé de cache distincte — suivi de
+      // scripts/push_sportsregions_fiches.py (workflow GitHub Actions "Mise à jour SportsRégions").
+      CacheService.getScriptCache().put(PROGRESS_CACHE_KEY_SPORTSREGIONS, JSON.stringify(body.progress), PROGRESS_CACHE_TTL);
+      return jsonResponse({ ok: true });
+    }
     return jsonResponse({ ok: false, error: 'action inconnue: ' + body.action });
   } catch (err) {
     return jsonResponse({ ok: false, error: String(err) });
@@ -115,6 +122,10 @@ function doPost(e) {
 function doGet(e) {
   if (e.parameter.action === 'progress') {
     const raw = CacheService.getScriptCache().get(PROGRESS_CACHE_KEY);
+    return jsonResponse(raw ? JSON.parse(raw) : null);
+  }
+  if (e.parameter.action === 'progress_sportsregions') {
+    const raw = CacheService.getScriptCache().get(PROGRESS_CACHE_KEY_SPORTSREGIONS);
     return jsonResponse(raw ? JSON.parse(raw) : null);
   }
   if (e.parameter.action === 'list_photos') {

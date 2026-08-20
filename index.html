@@ -185,6 +185,10 @@
     <button onclick="triggerSportsRegionsUpdate()">🌐 Mettre à jour les fiches équipe + le planning</button>
   </div>
   <div id="status-sportsregions" class="status"></div>
+  <div id="sportsregions-progress" style="display:none; margin-top:12px;">
+    <div class="progress-outer"><div id="sportsregions-progress-bar" class="progress-inner"></div></div>
+    <div id="sportsregions-progress-label" class="status" style="margin-top:6px;"></div>
+  </div>
 </div>
 
 <div class="panel" id="result-panel">
@@ -1558,15 +1562,79 @@ function setSportsRegionsStatus(msg, cls) {
   el.textContent = msg;
   el.className = 'status' + (cls ? ' ' + cls : '');
 }
+
+// ---------- Suivi d'avancement (fiches équipe puis planning) ----------
+// Même mécanisme que la barre FFHB (action `progress_sportsregions`, clé de cache distincte
+// côté Apps Script — voir CLAUDE.md du repo) : scripts/push_sportsregions_fiches.py pousse sa
+// progression, on la sonde ici. Timer séparé de celui du FFHB (_progressTimer) pour rester
+// indépendant si les deux tournaient en même temps.
+let _progressTimerSR = null;
+let _progressStopAtSR = null;
+
+async function fetchProgressSportsRegions() {
+  const sep = PROGRESS_WEBAPP_URL.includes('?') ? '&' : '?';
+  const res = await fetch(PROGRESS_WEBAPP_URL + sep + 'action=progress_sportsregions&_=' + Date.now());
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+function renderProgressSportsRegions(p) {
+  const wrap = document.getElementById('sportsregions-progress');
+  const bar = document.getElementById('sportsregions-progress-bar');
+  const label = document.getElementById('sportsregions-progress-label');
+  wrap.style.display = 'block';
+
+  if (!p || !p.team_total) {
+    bar.style.width = '2%';
+    label.textContent = '⏳ Démarrage du run GitHub Actions...';
+    return;
+  }
+  // Plus simple que la barre FFHB : pas de sous-étapes par équipe, chaque unité
+  // (équipe ou planning) est atomique — team_total inclut +1 pour le planning.
+  const done = Math.max(0, p.team_index - 1);
+  const pct = Math.min(100, Math.round((done / p.team_total) * 100));
+  bar.style.width = Math.max(2, pct) + '%';
+
+  if (p.done) {
+    bar.style.width = '100%';
+    label.textContent = p.error
+      ? `❌ Terminé avec des erreurs sur : ${p.error}`
+      : '✅ Terminé ! Fiches équipe + planning à jour sur SportsRégions.';
+    return;
+  }
+  label.textContent = `⏳ ${p.team_index}/${p.team_total}${p.team_label ? ' : ' + p.team_label : ''} (${pct}%)`;
+}
+
+function stopProgressPollingSportsRegions() {
+  if (_progressTimerSR) { clearInterval(_progressTimerSR); _progressTimerSR = null; }
+}
+
+function startProgressPollingSportsRegions(dispatchedAt) {
+  stopProgressPollingSportsRegions();
+  renderProgressSportsRegions(null);
+  _progressStopAtSR = Date.now() + 30 * 60 * 1000; // filet de sécurité : 30 min max
+  _progressTimerSR = setInterval(async () => {
+    if (Date.now() > _progressStopAtSR) { stopProgressPollingSportsRegions(); return; }
+    try {
+      const p = await fetchProgressSportsRegions();
+      // Ignore une progression d'un run précédent (started_at antérieur à notre déclenchement).
+      if (!p || !p.started_at || p.started_at < dispatchedAt) return;
+      renderProgressSportsRegions(p);
+      if (p.done) stopProgressPollingSportsRegions();
+    } catch (err) {
+      // Erreur de sondage ponctuelle : ne pas interrompre le polling pour ça.
+    }
+  }, 3000);
+}
+
 // Même principe que triggerRefresh() (dispatch d'un workflow GitHub Actions via l'API, même
-// jeton réutilisé) mais sans sélection d'équipes ni suivi de progression — voir
-// .github/workflows/update-sportsregions.yml et scripts/push_sportsregions_fiches.py. Pas de
-// polling de progression ici (contrairement au rafraîchissement FFHB) : suivi possible via
-// l'onglet "Actions" du repo GitHub si besoin, pas construit ici pour une 1ère version.
+// jeton réutilisé) mais sans sélection d'équipes — voir
+// .github/workflows/update-sportsregions.yml et scripts/push_sportsregions_fiches.py.
 async function triggerSportsRegionsUpdate() {
   const token = getToken();
   if (!token) { setSportsRegionsStatus('❌ Aucun jeton enregistré — colle ton jeton GitHub dans la section "Rafraîchir les données FFHB" ci-dessus d\'abord.', 'error'); return; }
   setSportsRegionsStatus('⏳ Déclenchement du workflow GitHub Actions...');
+  const dispatchedAt = new Date().toISOString();
   try {
     const res = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE_SPORTSREGIONS}/dispatches`, {
       method: 'POST',
@@ -1579,7 +1647,8 @@ async function triggerSportsRegionsUpdate() {
       body: JSON.stringify({ ref: 'main' }),
     });
     if (res.status === 204) {
-      setSportsRegionsStatus('✅ Mise à jour lancée. Suivi possible dans l\'onglet "Actions" du repo GitHub (quelques minutes).', 'ok');
+      setSportsRegionsStatus('✅ Mise à jour lancée. Suivi de l\'avancement ci-dessous.', 'ok');
+      startProgressPollingSportsRegions(dispatchedAt);
     } else {
       const text = await res.text();
       setSportsRegionsStatus('❌ Erreur GitHub (' + res.status + ') : ' + text, 'error');

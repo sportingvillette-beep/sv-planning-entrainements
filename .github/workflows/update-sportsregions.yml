@@ -8,6 +8,9 @@ name: Mise à jour SportsRégions
 #   SPORTSREGIONS_USERNAME, SPORTSREGIONS_PASSWORD — identifiants de connexion
 #   admin.sportsregions.fr. Sans eux, le job échoue immédiatement avec un message clair
 #   (scripts/sportsregions_pipeline.py, get_credentials()).
+# Réutilise aussi SHEET_WEBAPP_URL / SHEET_WEBAPP_SECRET (déjà configurés pour le scraper FFHB,
+# voir scrape-ffhb.yml) pour la barre de progression sur le site — best-effort, le run continue
+# normalement si ces 2-là sont absents (juste pas de barre de progression).
 #
 # NON TESTÉ à la création de ce workflow (2026-08-18) : la connexion SportsRégions a jusqu'ici
 # toujours été validée depuis un réseau/IP déjà connu du site (PC de Julien). Rien ne garantit
@@ -44,4 +47,6 @@ jobs:
         env:
           SPORTSREGIONS_USERNAME: ${{ secrets.SPORTSREGIONS_USERNAME }}
           SPORTSREGIONS_PASSWORD: ${{ secrets.SPORTSREGIONS_PASSWORD }}
+          SHEET_WEBAPP_URL: ${{ secrets.SHEET_WEBAPP_URL }}
+          SHEET_WEBAPP_SECRET: ${{ secrets.SHEET_WEBAPP_SECRET }}
         run: python scripts/push_sportsregions_fiches.py
