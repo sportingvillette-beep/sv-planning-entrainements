@@ -454,6 +454,8 @@ formulaire fuite, ça ne compromet pas le secret du scraper) :
 | `add_match` | POST JSON | `SHARED_SECRET` | Upsert d'un match par le scraper (voir mapping des colonnes ci-dessous). |
 | `progress` | POST JSON | `SHARED_SECRET` | Pousse la progression du scraping en cache éphémère (voir barre de progression). |
 | `progress` | GET | aucun | Lit la progression (donnée non sensible). |
+| `progress_sportsregions` | POST JSON | `SHARED_SECRET` | Même mécanique que `progress`, clé de cache distincte (`PROGRESS_CACHE_KEY_SPORTSREGIONS`) — suivi de `scripts/push_sportsregions_fiches.py` (workflow GitHub Actions "Mise à jour SportsRégions"), voir barre de progression dédiée sur le site. |
+| `progress_sportsregions` | GET | aucun | Lit cette progression (donnée non sensible). |
 | `add_score` | POST multipart | `FORM_SHARED_SECRET` | Écrit `Eq1Score`/`Eq2Score`/`WinLose` (sauf si verrouillé, cf `Score Source`) et/ou `Commentaire` (jamais verrouillé) — champs `score_dom`/`score_ext`/`winlose` **omis par le client** si le score est verrouillé, pour n'envoyer que le commentaire. |
 | `add_photo` | POST multipart | `FORM_SHARED_SECRET` | Upload une photo (base64, voir leçon dédiée) dans le dossier Drive du match — **n'écrit plus `PhotoEq`** (alimente juste la galerie). |
 | `select_photo` | POST multipart | `FORM_SHARED_SECRET` | Marque une photo déjà uploadée comme *la* photo officielle (écrit `PhotoEq`) — sélection manuelle uniquement, jamais automatique. |
