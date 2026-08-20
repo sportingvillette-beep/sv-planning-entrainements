@@ -494,9 +494,16 @@ def run_club_scrape(outdir: str):
     save_if(calendrier_club, os.path.join(outdir, "calendrier_club.csv"), "Calendrier club (toutes équipes)")
     save_if(classements_club, os.path.join(outdir, "classements_club.csv"), "Classements club (toutes équipes)")
 
-def _merge_by_key(prev: pd.DataFrame, new: pd.DataFrame, key_cols: list) -> pd.DataFrame:
+def _merge_by_key(prev: pd.DataFrame, new: pd.DataFrame, key_cols: list, preserve_col: str = None) -> pd.DataFrame:
     """Remplace dans `prev` les lignes des équipes présentes dans `new` (par key_cols),
-    garde le reste de `prev` intact, ajoute les lignes de `new`."""
+    garde le reste de `prev` intact, ajoute les lignes de `new`.
+
+    `preserve_col`, si fourni (ex. "journée"), protège de ce remplacement les lignes de
+    `prev` dont cette colonne vaut "Amical" (insensible à la casse), même si leur clé
+    d'équipe est aussi présente dans `new` — sinon un match amical/tournoi ajouté à la
+    main (même équipe+phase que des matchs FFHB réels) se fait silencieusement effacer au
+    prochain scraping de cette équipe (constaté le 2026-08-19 : 2 matchs du tournoi de
+    Blavozy ajoutés le 2026-08-17 disparus après le cron nocturne suivant)."""
     if prev is None or prev.empty:
         return new
     if new is None or new.empty:
@@ -507,6 +514,9 @@ def _merge_by_key(prev: pd.DataFrame, new: pd.DataFrame, key_cols: list) -> pd.D
     prev_keys = prev[key_cols].fillna("")
     new_keys = set(tuple(x) for x in new[key_cols].fillna("").itertuples(index=False, name=None))
     keep_mask = ~prev_keys.apply(lambda r: tuple(r) in new_keys, axis=1)
+    if preserve_col and preserve_col in prev.columns:
+        is_amical = prev[preserve_col].fillna("").astype(str).str.strip().str.casefold() == "amical"
+        keep_mask = keep_mask | is_amical
     return pd.concat([prev[keep_mask], new], ignore_index=True)
 
 def run_resync_sheet(mapping_dir: str, outdir: str, teams_filter: str):
@@ -626,7 +636,7 @@ def run_club_scrape_ci(mapping_dir: str, outdir: str, teams_filter: str):
     new_classements = pd.concat(classement_rows, ignore_index=True) if classement_rows else pd.DataFrame()
 
     key_cols = ["section", "indice", "categorie", "phase"]
-    final_calendrier = _merge_by_key(prev_calendrier, new_calendrier, key_cols)
+    final_calendrier = _merge_by_key(prev_calendrier, new_calendrier, key_cols, preserve_col="journée")
     final_classements = _merge_by_key(prev_classements, new_classements, key_cols)
 
     save_if(final_calendrier, calendrier_path, "Calendrier club")
