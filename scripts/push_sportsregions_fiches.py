@@ -57,6 +57,7 @@ from sportsregions_pipeline import (
     update_team_content,
 )
 from push_planning_entrainements import push_planning
+from push_calendriers_classements import push_calendriers_classements
 
 SITE_URL = "https://sportingvillette-beep.github.io/sv-planning-entrainements/"
 SAISON = "2026-2027"
@@ -184,8 +185,9 @@ def main() -> None:
 
         global _RUN_STARTED_AT
         _RUN_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        # +1 unité pour le planning entraînements, poussé après les fiches (voir plus bas).
-        progress_total = len(targets) + 1
+        # +2 unités : planning entraînements + page calendriers/classements, poussées après les
+        # fiches (voir plus bas).
+        progress_total = len(targets) + 2
         post_progress(0, progress_total, "")
 
         saison_value = SAISON_VALUES[SAISON]
@@ -233,21 +235,30 @@ def main() -> None:
         print(summary + ".", file=sys.stderr)
 
         # Lot complet uniquement (pas --team) : enchaîne la mise à jour du planning
-        # entraînements, même navigateur/session déjà authentifiés (demande de Julien,
-        # 2026-08-18 — un seul point d'entrée pour tout le contenu SportsRégions généré).
-        planning_error = None
+        # entraînements puis de la page calendriers/résultats/classements, même
+        # navigateur/session déjà authentifiés (demande de Julien, 2026-08-18/20 — un seul
+        # point d'entrée pour tout le contenu SportsRégions généré).
+        extra_errors = []
         if not args.team:
-            post_progress(progress_total, progress_total, "Planning entraînements")
+            post_progress(len(targets) + 1, progress_total, "Planning entraînements")
             try:
                 push_planning(page, args.site)
                 print('>>> Page "Planning entrainements" mise à jour.', file=sys.stderr)
             except Exception as e:
-                planning_error = str(e)
-                print(f'!!! Échec de la mise à jour du planning entraînements : {planning_error}', file=sys.stderr)
+                extra_errors.append(f"planning: {e}")
+                print(f'!!! Échec de la mise à jour du planning entraînements : {e}', file=sys.stderr)
+
+            post_progress(len(targets) + 2, progress_total, "Calendriers, résultats, classements")
+            try:
+                push_calendriers_classements(page, args.site)
+                print('>>> Page "Calendriers, résultats, classements" mise à jour.', file=sys.stderr)
+            except Exception as e:
+                extra_errors.append(f"calendriers/classements: {e}")
+                print(f'!!! Échec de la mise à jour de la page calendriers/classements : {e}', file=sys.stderr)
 
         post_progress(
             progress_total, progress_total, "", done=True,
-            error=(", ".join(fail) if fail else None) or planning_error,
+            error=", ".join(fail + extra_errors) or None,
         )
 
         browser.close()

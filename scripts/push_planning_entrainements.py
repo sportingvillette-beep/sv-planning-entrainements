@@ -21,7 +21,7 @@ pas en --dry-run ni --team) via `push_planning(page, site_url)`, qui réutilise 
 session déjà ouverts par ce script-là plutôt que d'en relancer un second.
 
 Usage autonome :
-    python push_planning_entrainements.py --dry-run   # génère et affiche (intro + tableau), ne touche rien (pas de login)
+    python push_planning_entrainements.py --dry-run   # génère et affiche (intro + tableau), ne pousse rien (mais se connecte quand même, en lecture seule, pour lire l'intro actuel)
     python push_planning_entrainements.py               # pousse pour de vrai (connexion fraîche systématique)
     python push_planning_entrainements.py --headed      # navigateur visible
 """
@@ -99,12 +99,12 @@ def push_planning(page: Page, site_url: str = SITE_URL, *, dry_run: bool = False
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dry-run", action="store_true", help="Génère et affiche (intro préservé + nouveau tableau), ne pousse rien (pas de login)")
+    ap.add_argument("--dry-run", action="store_true", help="Génère et affiche (intro préservé + nouveau tableau), ne pousse rien (mais se connecte quand même, en lecture seule, pour lire l'intro actuel de la page)")
     ap.add_argument("--site", default=SITE_URL, help="URL du site à charger pour générer le tableau (défaut : GitHub Pages en prod)")
     ap.add_argument("--headed", action="store_true", help="Navigateur visible")
     args = ap.parse_args()
 
-    if not args.dry_run and not get_credentials():
+    if not get_credentials():
         print(
             "!!! Identifiants SportsRégions absents : variables d'environnement "
             "SPORTSREGIONS_USERNAME / SPORTSREGIONS_PASSWORD non définies.",
@@ -117,8 +117,7 @@ def main() -> None:
         context = browser.new_context()
         page = context.new_page()
 
-        if not args.dry_run:
-            login(page)
+        login(page)
 
         result = push_planning(page, args.site, dry_run=args.dry_run)
 
