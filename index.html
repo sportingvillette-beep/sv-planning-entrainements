@@ -1058,6 +1058,78 @@ function cleanOpponentLabel(raw) {
   return index ? `${base} - ${index}` : base;
 }
 
+// ---------- Page SportsRégions "Calendriers, résultats, classements" ----------
+// Construite à partir de scraper/team_mapping.csv (1 ligne = 1 équipe+phase déjà connue,
+// poule_url = lien FFHB de la poule), data/classements_club.csv (classement complet de chaque
+// poule) et data/calendrier_club.csv (pour compter les journées jouées) — pas besoin du CSV
+// équipes (Sheet). keyMatch/findPosInPoule/ordinalFr/catRank : fonctions existantes, réutilisées
+// telles quelles (mêmes noms de colonnes lowercase section/indice/categorie/phase partout).
+function renderCalendriersClassementsPage(mappingRows, classementsRows, calendrierRows) {
+  function teamLabel(r) {
+    const g = (r['genre'] === 'F' || r['genre'] === 'G') ? r['genre'] : '';
+    let label = r['categorie'] + g;
+    if (r['indice']) label += ' ' + r['indice'];
+    return label;
+  }
+  // Nombre de matchs déjà joués (score connu) pour cette équipe+phase — exclut les amicaux
+  // (journée="Amical", même marqueur que build_weekend_payload.py) qui ne comptent pas comme
+  // des journées de championnat.
+  function journeesJouees(r) {
+    return calendrierRows.filter(c => keyMatch(c, r)
+      && (c['journée'] || '').trim().toLowerCase() !== 'amical'
+      && (c['score'] || '').trim() !== '').length;
+  }
+  function poulePos(r) {
+    const rowsForKey = classementsRows
+      .filter(c => keyMatch(c, r))
+      .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
+    if (!rowsForKey.length) return '';
+    // Début de saison : tout le monde à 0 point, un "1er/6" n'aurait aucun sens tant qu'aucun
+    // match n'a été joué dans la poule — classement volontairement vide dans ce cas (demande
+    // de Julien, 2026-08-20).
+    const allZero = rowsForKey.every(c => !(parseInt(c['Points'], 10) > 0));
+    if (allZero) return '';
+    const pos = findPosInPoule(rowsForKey, r['equipe_ffhb_proposee']);
+    return pos ? `${ordinalFr(pos)} / ${rowsForKey.length}` : '';
+  }
+
+  const sectionOrder = [];
+  const bySection = {};
+  mappingRows.forEach(r => {
+    const section = r['section'];
+    if (!sectionOrder.includes(section)) sectionOrder.push(section);
+    (bySection[section] = bySection[section] || []).push(r);
+  });
+
+  let rows = '';
+  for (const section of sectionOrder) {
+    const color = SECTION_COLORS[section] || DEFAULT_SECTION_COLOR;
+    const teams = [...bySection[section]].sort((a, b) => {
+      const ca = catRank(a['categorie']), cb = catRank(b['categorie']);
+      if (ca !== cb) return ca - cb;
+      const ia = a['indice'] || '', ib = b['indice'] || '';
+      if (ia !== ib) return ia.localeCompare(ib);
+      return (a['phase'] || '').localeCompare(b['phase'] || '');
+    });
+    rows += `<tr><td colspan="6" style="background-color:${color};color:#ffffff"><b>${section}</b></td></tr>`;
+    for (const r of teams) {
+      const phaseNum = (r['phase'] || '').replace('P', '') || '1';
+      const lienPart = r['poule_url'] ? `<a href="${r['poule_url']}" target="_blank" rel="noopener">Lien FFHB</a>` : '';
+      rows += `<tr><td><b>${teamLabel(r)}</b></td><td>${phaseNum}</td><td>${journeesJouees(r)}</td><td>${r['niveau'] || ''}</td><td>${lienPart}</td><td>${poulePos(r)}</td></tr>`;
+    }
+  }
+
+  // <p>&nbsp;</p> devant le tableau : ancre stable pour la préservation d'intro côté Python
+  // (push_calendriers_classements.py, split_intro_and_generated) — toujours régénérée avec le
+  // tableau, jamais absente, sinon la frontière intro/généré dérive d'un run à l'autre (même
+  // piège que documenté pour la page planning entraînements).
+  return `<p>&nbsp;</p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th style="background-color:#1a1a1a;color:#ffffff">Équipe</th><th style="background-color:#1a1a1a;color:#ffffff">Phase</th><th style="background-color:#1a1a1a;color:#ffffff">Journées jouées</th><th style="background-color:#1a1a1a;color:#ffffff">Niveau</th><th style="background-color:#1a1a1a;color:#ffffff">Lien</th><th style="background-color:#1a1a1a;color:#ffffff">Classement</th></tr>
+${rows}
+</table>`;
+}
+
 function renderFFHBTable(rows) {
   if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Aucun match trouvé sur cette période.</p>';
   const trs = rows.map(r => {
