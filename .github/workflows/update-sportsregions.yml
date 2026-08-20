@@ -1,0 +1,47 @@
+name: Mise à jour SportsRégions
+
+# Déclenchement manuel uniquement (bouton sur le site, voir index.html / triggerSportsRegionsUpdate)
+# — pas de cron, cette mise à jour est initiée par un admin quand il en a besoin, pas
+# automatique sur un rythme fixe.
+#
+# Nécessite 2 secrets du repo (Settings > Secrets and variables > Actions) :
+#   SPORTSREGIONS_USERNAME, SPORTSREGIONS_PASSWORD — identifiants de connexion
+#   admin.sportsregions.fr. Sans eux, le job échoue immédiatement avec un message clair
+#   (scripts/sportsregions_pipeline.py, get_credentials()).
+#
+# NON TESTÉ à la création de ce workflow (2026-08-18) : la connexion SportsRégions a jusqu'ici
+# toujours été validée depuis un réseau/IP déjà connu du site (PC de Julien). Rien ne garantit
+# qu'elle passe aussi bien depuis les IP partagées des runners GitHub Actions (risque de
+# CAPTCHA/2FA réelle bloquante côté site) — à vérifier au premier run réel.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-sportsregions
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          pip install -r scripts/requirements-sportsregions.txt
+          playwright install --with-deps chromium
+
+      - name: Mettre à jour les fiches équipe + le planning entraînements
+        env:
+          SPORTSREGIONS_USERNAME: ${{ secrets.SPORTSREGIONS_USERNAME }}
+          SPORTSREGIONS_PASSWORD: ${{ secrets.SPORTSREGIONS_PASSWORD }}
+        run: python scripts/push_sportsregions_fiches.py

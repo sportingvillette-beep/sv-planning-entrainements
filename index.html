@@ -178,6 +178,15 @@
   </div>
 </div>
 
+<div class="panel">
+  <h2>Mettre à jour SportsRégions</h2>
+  <div class="subtitle" style="margin-bottom:14px;">Pousse le contenu à jour (années de naissance, prix licence, championnat, poule, description) sur les 37 fiches équipe et sur la page "Planning entrainements" du site club. Nécessite le même jeton GitHub que le rafraîchissement FFHB ci-dessus.</div>
+  <div class="btn-row">
+    <button onclick="triggerSportsRegionsUpdate()">🌐 Mettre à jour les fiches équipe + le planning</button>
+  </div>
+  <div id="status-sportsregions" class="status"></div>
+</div>
+
 <div class="panel" id="result-panel">
   <div id="result-toolbar">
     <span id="result-name"></span>
@@ -961,6 +970,7 @@ const CLASSEMENTS_CLUB_URL = 'data/classements_club.csv';
 const LAST_UPDATE_URL = 'data/last_update.json';
 const GH_REPO = 'sportingvillette-beep/sv-planning-entrainements';
 const GH_WORKFLOW_FILE = 'scrape-ffhb.yml';
+const GH_WORKFLOW_FILE_SPORTSREGIONS = 'update-sportsregions.yml';
 const GH_TOKEN_KEY = 'sv_gh_token';
 // Même Web App Apps Script que la synchro des matchs (voir apps-script/Code.gs) — l'URL
 // n'est pas sensible en elle-même (seules les actions d'écriture sont protégées par secret),
@@ -1540,6 +1550,42 @@ async function triggerRefresh() {
     }
   } catch (err) {
     setRefreshStatus('❌ Erreur réseau : ' + err.message, 'error');
+  }
+}
+
+function setSportsRegionsStatus(msg, cls) {
+  const el = document.getElementById('status-sportsregions');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+// Même principe que triggerRefresh() (dispatch d'un workflow GitHub Actions via l'API, même
+// jeton réutilisé) mais sans sélection d'équipes ni suivi de progression — voir
+// .github/workflows/update-sportsregions.yml et scripts/push_sportsregions_fiches.py. Pas de
+// polling de progression ici (contrairement au rafraîchissement FFHB) : suivi possible via
+// l'onglet "Actions" du repo GitHub si besoin, pas construit ici pour une 1ère version.
+async function triggerSportsRegionsUpdate() {
+  const token = getToken();
+  if (!token) { setSportsRegionsStatus('❌ Aucun jeton enregistré — colle ton jeton GitHub dans la section "Rafraîchir les données FFHB" ci-dessus d\'abord.', 'error'); return; }
+  setSportsRegionsStatus('⏳ Déclenchement du workflow GitHub Actions...');
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE_SPORTSREGIONS}/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    if (res.status === 204) {
+      setSportsRegionsStatus('✅ Mise à jour lancée. Suivi possible dans l\'onglet "Actions" du repo GitHub (quelques minutes).', 'ok');
+    } else {
+      const text = await res.text();
+      setSportsRegionsStatus('❌ Erreur GitHub (' + res.status + ') : ' + text, 'error');
+    }
+  } catch (err) {
+    setSportsRegionsStatus('❌ Erreur réseau : ' + err.message, 'error');
   }
 }
 
