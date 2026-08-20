@@ -1,5 +1,5 @@
 {
-  "derniere_maj": "2026-08-19T23:46:04.512914+00:00",
+  "derniere_maj": "2026-08-20T23:51:01.564246+00:00",
   "mode": "complet",
   "equipes_rafraichies": [
     "Entente_Lyon_Est_Handball_F_M16_P1",
@@ -14,7 +14,9 @@
     "Entente_Est_Lyonnais_G_B_M15_P1",
     "Entente_Villette_Genas_C_M15_P1",
     "Entente_Villette_Genas_D_M18_P1",
-    "Entente_Est_Lyonnais_G_A_M18_P1"
+    "Entente_Est_Lyonnais_G_A_M18_P1",
+    "Entente_Villette_Genas_C_M18_P1",
+    "Entente_Est_Lyonnais_G_B_M18_P1"
   ],
   "erreurs": []
 }
