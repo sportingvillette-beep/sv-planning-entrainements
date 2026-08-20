@@ -1134,6 +1134,76 @@ ${rows}
 </table>`;
 }
 
+// ---------- Tableau de synthèse "résultats du week-end" (news SportsRégions) ----------
+// `rows` = lignes de data/calendrier_club.csv déjà filtrées par l'appelant (fenêtre du
+// week-end + score renseigné) — cette fonction ne fait que le rendu, pas le filtrage (même
+// convention que generateFFHBWeekend, qui filtre côté appelant). `historyText` = contenu brut
+// (déjà fetché par l'appelant, souvent lu localement côté Python plutôt que via HTTP — voir
+// scripts/push_weekend_news.py) d'un instantané data/classements_history/*.csv antérieur à ce
+// week-end, ou '' si aucun disponible (évolution alors omise plutôt que fausse).
+function renderWeekendResultsTable(rows, mappingRows, classementsRows, historyText) {
+  const historyRows = historyText ? parseCSV(historyText) : [];
+
+  function ourMappingRow(r) {
+    return mappingRows.find(m => keyMatch(r, m)) || null;
+  }
+
+  function classementCell(ref) {
+    if (!ref) return '';
+    const current = classementsRows
+      .filter(c => keyMatch(c, ref))
+      .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
+    if (!current.length) return '';
+    const curPos = findPosInPoule(current, ref['equipe_ffhb_proposee']);
+    if (!curPos) return '';
+    let evolution = '';
+    if (historyRows.length) {
+      const before = historyRows
+        .filter(c => keyMatch(c, ref))
+        .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
+      const beforePos = before.length ? findPosInPoule(before, ref['equipe_ffhb_proposee']) : null;
+      // beforePos - curPos > 0 : l'équipe est montée dans le classement (position numérique
+      // plus petite = meilleur rang) — vert. < 0 : descendue — rouge. Rien si inchangé ou si
+      // l'un des deux instantanés ne donne pas de position exploitable.
+      if (beforePos && beforePos !== curPos) {
+        const delta = beforePos - curPos;
+        const color = delta > 0 ? '#2e7d32' : '#c0392b';
+        evolution = ` <span style="color:${color}"><b>(${delta > 0 ? '+' : ''}${delta})</b></span>`;
+      }
+    }
+    return `${ordinalFr(curPos)} / ${current.length}${evolution}`;
+  }
+
+  const enriched = rows.map(r => {
+    const ref = ourMappingRow(r);
+    const label = ref
+      ? `${ref['categorie']}${(ref['genre'] === 'F' || ref['genre'] === 'G') ? ref['genre'] : ''}${ref['indice'] ? ' ' + ref['indice'] : ''}`
+      : equipeLabel(r);
+    return { r, ref, label, section: ref ? ref['section'] : (r['section'] || '') };
+  }).sort((a, b) => {
+    if (a.section !== b.section) return a.section.localeCompare(b.section);
+    const ca = catRank(a.r['categorie']), cb = catRank(b.r['categorie']);
+    if (ca !== cb) return ca - cb;
+    return a.label.localeCompare(b.label);
+  });
+
+  const body = enriched.map(({ r, ref, label, section }) => {
+    const dom = r['domicile'] || '';
+    const ext = r['extérieur'] || '';
+    const score = r['score'] || '';
+    return `<tr><td><b>${section}</b><br>${label}</td><td>${dom}</td><td><b>${score}</b></td><td>${ext}</td><td>${classementCell(ref)}</td></tr>`;
+  }).join('');
+
+  if (!enriched.length) {
+    return '<p><i>Aucun résultat connu pour ce week-end.</i></p>';
+  }
+
+  return `<table border="1" cellpadding="6" cellspacing="0">
+<tr><th style="background-color:#1a1a1a;color:#ffffff">Équipe</th><th style="background-color:#1a1a1a;color:#ffffff">Domicile</th><th style="background-color:#1a1a1a;color:#ffffff">Score</th><th style="background-color:#1a1a1a;color:#ffffff">Extérieur</th><th style="background-color:#1a1a1a;color:#ffffff">Classement</th></tr>
+${body}
+</table>`;
+}
+
 function renderFFHBTable(rows) {
   if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Aucun match trouvé sur cette période.</p>';
   const trs = rows.map(r => {
