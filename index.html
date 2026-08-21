@@ -971,6 +971,12 @@ function downloadResult() {
 const TEAM_MAPPING_URL = 'scraper/team_mapping.csv';
 const CALENDRIER_CLUB_URL = 'data/calendrier_club.csv';
 const CLASSEMENTS_CLUB_URL = 'data/classements_club.csv';
+// Sheet "Com matchs réseaux" (onglet Matchs) publiée en CSV — mêmes URL/colonnes que
+// scripts/result_stories.py (PhotoEq/Commentaire saisis via form-score-club-2-, voir
+// CLAUDE.md du repo, section "Colonnes de la sheet Matchs"). Pas un fichier same-origin
+// (contrairement aux constantes ci-dessus) mais Google Sheets publié accepte le fetch
+// cross-origin.
+const MATCHS_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQvskuueB25qKj0hbDWjFPomFdhfWRduUsNLp6Kv-za4t4oXcbbLsLrNsjwIt0ZH7C9B75pYBGDJfQu/pub?output=csv';
 const LAST_UPDATE_URL = 'data/last_update.json';
 const GH_REPO = 'sportingvillette-beep/sv-planning-entrainements';
 const GH_WORKFLOW_FILE = 'scrape-ffhb.yml';
@@ -1202,6 +1208,39 @@ function renderWeekendResultsTable(rows, mappingRows, classementsRows, historyTe
 <tr><th style="background-color:#1a1a1a;color:#ffffff">Équipe</th><th style="background-color:#1a1a1a;color:#ffffff">Domicile</th><th style="background-color:#1a1a1a;color:#ffffff">Score</th><th style="background-color:#1a1a1a;color:#ffffff">Extérieur</th><th style="background-color:#1a1a1a;color:#ffffff">Classement</th></tr>
 ${body}
 </table>`;
+}
+
+// ---------- Blocs par équipe "remontées des participants" (news SportsRégions, bloc 3) ----------
+// `rows` = lignes de la sheet Matchs (MATCHS_SHEET_CSV_URL) déjà filtrées par l'appelant
+// (week-end + score final connu + au moins PhotoEq ou Commentaire renseigné — filtrage côté
+// appelant, même convention que renderWeekendResultsTable/renderFFHBTable). SANS IA (demande
+// explicite de Julien, 2026-08-20) : le commentaire est repris texte pour texte, aucune
+// reformulation. PhotoEq déjà au format https://lh3.googleusercontent.com/d/{fileId}
+// (partagé "anyone with link", utilisable direct en <img src>, voir CLAUDE.md du repo).
+function renderWeekendTeamBlocks(rows) {
+  function teamLabel(r) {
+    const g = (r['Genre'] === 'F' || r['Genre'] === 'G') ? r['Genre'] : '';
+    let label = (r['Catégorie'] || '') + g;
+    if (r['Index']) label += ' ' + r['Index'];
+    return label;
+  }
+
+  if (!rows.length) return '';
+
+  return rows.map(r => {
+    const label = teamLabel(r);
+    const eq1 = r['Eq1'] || '';
+    const eq2 = r['Eq2'] || '';
+    const score = `${r['Eq1Score'] || ''} - ${r['Eq2Score'] || ''}`;
+    const photo = (r['PhotoEq'] || '').trim();
+    const photoPart = photo ? `<p><img src="${photo}" style="max-width:100%;" alt="${label}"></p>` : '';
+    const comment = (r['Commentaire'] || '').trim();
+    const commentPart = comment ? `<p><i>« ${comment} »</i></p>` : '';
+    return `<p>&nbsp;</p>
+<p style="background-color:#1a1a1a;color:#ffffff"><b>${label}</b></p>
+<p>${eq1} <b>${score}</b> ${eq2}</p>
+${photoPart}${commentPart}`;
+  }).join('\n');
 }
 
 function renderFFHBTable(rows) {

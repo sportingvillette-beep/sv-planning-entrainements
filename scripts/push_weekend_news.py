@@ -1,15 +1,18 @@
 """Crée et publie sur SportsRégions (admin.sportsregions.fr/actualite) la news hebdomadaire
-"résultats du week-end" — pour l'instant seulement le tableau de synthèse des résultats (bloc
-2 du plan de Julien, 2026-08-20) ; intro IA, blocs par équipe et actus à venir viendront dans
-des incréments suivants (même philosophie "pas à pas" que le reste du chantier SportsRégions).
+"résultats du week-end" — bloc 2 (tableau de synthèse des résultats) + bloc 3 (un bloc par
+match avec photo et/ou commentaire remonté par les participants, SANS IA, texte repris tel
+quel) du plan de Julien (2026-08-20). Intro IA et bloc actus à venir restent à construire
+(même philosophie "pas à pas" que le reste du chantier SportsRégions).
 
-Le tableau (`renderWeekendResultsTable`, index.html) est régénéré via page.evaluate sur le site
-GitHub Pages en direct, comme le reste de l'automatisation SportsRégions — voir
-push_sportsregions_fiches.py pour le principe général. La seule donnée qui ne peut PAS venir du
-site (fetch HTTP) est l'instantané de classement d'avant le week-end
+Le contenu (`renderWeekendResultsTable` + `renderWeekendTeamBlocks`, index.html) est régénéré
+via page.evaluate sur le site GitHub Pages en direct, comme le reste de l'automatisation
+SportsRégions — voir push_sportsregions_fiches.py pour le principe général. La seule donnée qui
+ne peut PAS venir du site (fetch HTTP) est l'instantané de classement d'avant le week-end
 (data/classements_history/*.csv, committé dans ce repo) : lu directement depuis le disque local
 (le script tourne dans le même checkout que ces fichiers, que ce soit en CI ou en local) et
-passé en paramètre à la fonction JS plutôt que refetché.
+passé en paramètre à la fonction JS plutôt que refetché. Le bloc 3 lit la sheet "Matchs"
+publiée en CSV (MATCHS_SHEET_CSV_URL, même source que scripts/result_stories.py) pour
+PhotoEq/Commentaire — données saisies par les coachs via form-score-club-2-.
 
 Usage :
     python push_weekend_news.py --dry-run                    # génère et affiche le tableau, ne touche rien
@@ -40,22 +43,44 @@ HISTORY_DIR = Path(__file__).resolve().parent.parent / "data" / "classements_his
 
 GENERATE_JS = """
     async ([saturdayISO, sundayISO, historyText]) => {
-      const [calText, mapText, clText] = await Promise.all([
+      const [calText, mapText, clText, matchsText] = await Promise.all([
         fetchText(CALENDRIER_CLUB_URL),
         fetchText(TEAM_MAPPING_URL),
         fetchText(CLASSEMENTS_CLUB_URL),
+        fetchText(MATCHS_SHEET_CSV_URL),
       ]);
       const calendrierRows = parseCSV(calText);
       const mappingRows = parseCSV(mapText).filter(r => (r['equipe_ffhb_proposee'] || '').trim() !== '');
       const classementsRows = parseCSV(clText);
       const start = new Date(saturdayISO), end = new Date(sundayISO);
+      end.setHours(23, 59, 59, 999);
+
       const played = calendrierRows.filter(r => {
         const d = parseFrenchDate(r['date/heure']);
         return d && d >= start && d <= end && (r['score'] || '').trim() !== '';
       });
+      const resultsTable = renderWeekendResultsTable(played, mappingRows, classementsRows, historyText || '');
+
+      // Sheet Matchs : Date au format DD/MM/YYYY (pas le même format que calendrier_club.csv,
+      // colonne séparée de Heure) — parsing dédié, pas de fonction existante réutilisable ici.
+      function parseSheetDate(dateStr) {
+        const m = (dateStr || '').match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);
+        if (!m) return null;
+        return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+      }
+      const matchsRows = parseCSV(matchsText).filter(r => {
+        const d = parseSheetDate(r['Date']);
+        if (!d || d < start || d > end) return false;
+        const scoreFinal = (r['Eq1Score'] || '').trim() && (r['Eq2Score'] || '').trim() && (r['WinLose'] || '').trim();
+        if (!scoreFinal) return false;
+        return (r['PhotoEq'] || '').trim() !== '' || (r['Commentaire'] || '').trim() !== '';
+      });
+      const teamBlocks = renderWeekendTeamBlocks(matchsRows);
+
       return {
         count: played.length,
-        html: renderWeekendResultsTable(played, mappingRows, classementsRows, historyText || ''),
+        teamBlocksCount: matchsRows.length,
+        html: resultsTable + (teamBlocks ? '\\n<p>&nbsp;</p>\\n' + teamBlocks : ''),
       };
     }
 """
@@ -193,6 +218,7 @@ def main() -> None:
 
         result = generate_results_table(page, args.site, saturday, sunday)
         print(f">>> {result['count']} résultat(s) trouvé(s) pour le week-end du {saturday}.", file=sys.stderr)
+        print(f">>> {result['teamBlocksCount']} bloc(s) équipe (photo/commentaire) inclus.", file=sys.stderr)
 
         if args.dry_run:
             print(result["html"])
