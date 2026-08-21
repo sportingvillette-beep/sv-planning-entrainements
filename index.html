@@ -1243,6 +1243,64 @@ ${photoPart}${commentPart}`;
   }).join('\n');
 }
 
+// ---------- Résumé texte brut (pas de HTML) pour l'intro IA de la news hebdomadaire ----------
+// Même données que renderWeekendResultsTable/renderWeekendTeamBlocks mais en texte simple —
+// consommé par push_weekend_news.py comme contexte du prompt envoyé à l'API Claude (voir
+// scripts/weekend_news_intro_style.md pour le ton éditorial). Duplique une partie du calcul de
+// classement plutôt que de réutiliser renderWeekendResultsTable : sortie texte, pas HTML,
+// mélanger les deux aurait forcé soit à parser du HTML soit à complexifier inutilement le
+// rendu HTML pour un usage texte annexe.
+function summarizeWeekendForAI(resultRows, mappingRows, classementsRows, historyText, teamBlockRows) {
+  const historyRows = historyText ? parseCSV(historyText) : [];
+
+  function classementSuffix(ref) {
+    if (!ref) return '';
+    const current = classementsRows
+      .filter(c => keyMatch(c, ref))
+      .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
+    if (!current.length) return '';
+    const curPos = findPosInPoule(current, ref['equipe_ffhb_proposee']);
+    if (!curPos) return '';
+    let evolution = '';
+    if (historyRows.length) {
+      const before = historyRows
+        .filter(c => keyMatch(c, ref))
+        .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
+      const beforePos = before.length ? findPosInPoule(before, ref['equipe_ffhb_proposee']) : null;
+      if (beforePos && beforePos !== curPos) {
+        const delta = beforePos - curPos;
+        evolution = `, ${delta > 0 ? 'monte' : 'descend'} de ${Math.abs(delta)} place${Math.abs(delta) > 1 ? 's' : ''}`;
+      }
+    }
+    return ` (${ordinalFr(curPos)}/${current.length}${evolution})`;
+  }
+
+  const resultsLines = resultRows.map(r => {
+    const ref = mappingRows.find(m => keyMatch(r, m));
+    const label = ref
+      ? `${ref['categorie']}${(ref['genre'] === 'F' || ref['genre'] === 'G') ? ref['genre'] : ''}${ref['indice'] ? ' ' + ref['indice'] : ''}`
+      : equipeLabel(r);
+    const dom = r['domicile'] || '';
+    const ext = r['extérieur'] || '';
+    const score = r['score'] || '';
+    return `- ${label} : ${dom} ${score} ${ext}${classementSuffix(ref)}`;
+  });
+
+  const commentLines = teamBlockRows
+    .filter(r => (r['Commentaire'] || '').trim() !== '')
+    .map(r => {
+      const g = (r['Genre'] === 'F' || r['Genre'] === 'G') ? r['Genre'] : '';
+      const label = `${r['Catégorie'] || ''}${g}${r['Index'] ? ' ' + r['Index'] : ''}`;
+      return `- ${label} : "${r['Commentaire'].trim()}"`;
+    });
+
+  let text = 'Résultats du week-end :\n' + (resultsLines.length ? resultsLines.join('\n') : '(aucun résultat connu)');
+  if (commentLines.length) {
+    text += '\n\nCommentaires des coachs :\n' + commentLines.join('\n');
+  }
+  return text;
+}
+
 function renderFFHBTable(rows) {
   if (!rows.length) return '<p style="font-family:Arial,Helvetica,sans-serif;color:#555;">Aucun match trouvé sur cette période.</p>';
   const trs = rows.map(r => {
