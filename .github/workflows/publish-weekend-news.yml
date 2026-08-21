@@ -1,0 +1,47 @@
+name: Rédiger la news du week-end
+
+# Déclenchement manuel uniquement (bouton sur le site, voir index.html / triggerWeekendNews) —
+# crée une NOUVELLE news à chaque exécution (pas idempotent, contrairement à la mise à jour
+# SportsRégions des fiches/planning/classements) : jamais de cron ici, jamais fondu dans le
+# bouton "Mettre à jour SportsRégions" existant, décision explicite de Julien (2026-08-20).
+#
+# Ne publie JAMAIS automatiquement (pas de --publish) : la news est créée et remplie
+# (intro IA + tableau de résultats + blocs équipe) mais reste "Hors ligne" (brouillon) — Julien
+# la relit et la publie lui-même depuis admin.sportsregions.fr.
+#
+# Nécessite les secrets du repo (Settings > Secrets and variables > Actions) :
+#   SPORTSREGIONS_USERNAME, SPORTSREGIONS_PASSWORD — déjà utilisés par update-sportsregions.yml.
+#   ANTHROPIC_API_KEY — nouveau secret, pour l'intro générée par IA (scripts/push_weekend_news.py).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-weekend-news
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          pip install -r scripts/requirements-sportsregions.txt
+          playwright install --with-deps chromium
+
+      - name: Créer la news (reste "Hors ligne", à publier manuellement)
+        env:
+          SPORTSREGIONS_USERNAME: ${{ secrets.SPORTSREGIONS_USERNAME }}
+          SPORTSREGIONS_PASSWORD: ${{ secrets.SPORTSREGIONS_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/push_weekend_news.py

@@ -191,6 +191,16 @@
   </div>
 </div>
 
+<div class="panel">
+  <h2>News "résultats du week-end"</h2>
+  <div class="subtitle" style="margin-bottom:14px;">Crée sur SportsRégions un brouillon de news (intro générée par IA + tableau des résultats + blocs photos/commentaires) pour le dernier week-end écoulé — reste "Hors ligne", à relire et publier toi-même depuis l'admin SportsRégions. Nécessite le même jeton GitHub que ci-dessus.</div>
+  <div class="btn-row">
+    <a class="btn-link" href="https://github.com/sportingvillette-beep/sv-planning-entrainements/edit/main/scripts/weekend_news_intro_style.md" target="_blank" rel="noopener">✏️ Éditer le ton éditorial</a>
+    <button onclick="triggerWeekendNews()">🗞️ Rédiger la news du dernier week-end</button>
+  </div>
+  <div id="status-weekend-news" class="status"></div>
+</div>
+
 <div class="panel" id="result-panel">
   <div id="result-toolbar">
     <span id="result-name"></span>
@@ -981,6 +991,7 @@ const LAST_UPDATE_URL = 'data/last_update.json';
 const GH_REPO = 'sportingvillette-beep/sv-planning-entrainements';
 const GH_WORKFLOW_FILE = 'scrape-ffhb.yml';
 const GH_WORKFLOW_FILE_SPORTSREGIONS = 'update-sportsregions.yml';
+const GH_WORKFLOW_FILE_WEEKEND_NEWS = 'publish-weekend-news.yml';
 const GH_TOKEN_KEY = 'sv_gh_token';
 // Même Web App Apps Script que la synchro des matchs (voir apps-script/Code.gs) — l'URL
 // n'est pas sensible en elle-même (seules les actions d'écriture sont protégées par secret),
@@ -1898,6 +1909,41 @@ async function triggerSportsRegionsUpdate() {
     }
   } catch (err) {
     setSportsRegionsStatus('❌ Erreur réseau : ' + err.message, 'error');
+  }
+}
+
+function setWeekendNewsStatus(msg, cls) {
+  const el = document.getElementById('status-weekend-news');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+// Même principe que triggerSportsRegionsUpdate(), mais crée une NOUVELLE news à chaque
+// déclenchement (pas idempotent) — pas de barre de progression (un seul élément généré, pas
+// une boucle sur plusieurs équipes) ; la news reste "Hors ligne", à relire et publier
+// manuellement depuis admin.sportsregions.fr (voir scripts/push_weekend_news.py).
+async function triggerWeekendNews() {
+  const token = getToken();
+  if (!token) { setWeekendNewsStatus('❌ Aucun jeton enregistré — colle ton jeton GitHub dans la section "Rafraîchir les données FFHB" ci-dessus d\'abord.', 'error'); return; }
+  setWeekendNewsStatus('⏳ Déclenchement du workflow GitHub Actions...');
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE_WEEKEND_NEWS}/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    if (res.status === 204) {
+      setWeekendNewsStatus('✅ Rédaction lancée (quelques minutes). Le brouillon apparaîtra "Hors ligne" dans admin.sportsregions.fr/actualite — à relire avant de publier.', 'ok');
+    } else {
+      const text = await res.text();
+      setWeekendNewsStatus('❌ Erreur GitHub (' + res.status + ') : ' + text, 'error');
+    }
+  } catch (err) {
+    setWeekendNewsStatus('❌ Erreur réseau : ' + err.message, 'error');
   }
 }
 
