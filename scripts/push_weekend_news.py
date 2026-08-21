@@ -1,21 +1,29 @@
 """Crée et publie sur SportsRégions (admin.sportsregions.fr/actualite) la news hebdomadaire
-"résultats du week-end" — bloc 2 (tableau de synthèse des résultats) + bloc 3 (un bloc par
-match avec photo et/ou commentaire remonté par les participants, SANS IA, texte repris tel
-quel) du plan de Julien (2026-08-20). Intro IA et bloc actus à venir restent à construire
-(même philosophie "pas à pas" que le reste du chantier SportsRégions).
+"résultats du week-end" — intro courte générée par IA (bloc 1) + tableau de synthèse des
+résultats (bloc 2) + un bloc par match avec photo et/ou commentaire remonté par les
+participants, SANS IA pour ce bloc-là, texte repris tel quel (bloc 3). Plan complet de Julien,
+2026-08-20 ; reste à construire : bloc 4 optionnel (actus à venir).
 
-Le contenu (`renderWeekendResultsTable` + `renderWeekendTeamBlocks`, index.html) est régénéré
-via page.evaluate sur le site GitHub Pages en direct, comme le reste de l'automatisation
-SportsRégions — voir push_sportsregions_fiches.py pour le principe général. La seule donnée qui
-ne peut PAS venir du site (fetch HTTP) est l'instantané de classement d'avant le week-end
-(data/classements_history/*.csv, committé dans ce repo) : lu directement depuis le disque local
-(le script tourne dans le même checkout que ces fichiers, que ce soit en CI ou en local) et
-passé en paramètre à la fonction JS plutôt que refetché. Le bloc 3 lit la sheet "Matchs"
-publiée en CSV (MATCHS_SHEET_CSV_URL, même source que scripts/result_stories.py) pour
+Le contenu déterministe (`renderWeekendResultsTable` + `renderWeekendTeamBlocks`, index.html)
+est régénéré via page.evaluate sur le site GitHub Pages en direct, comme le reste de
+l'automatisation SportsRégions — voir push_sportsregions_fiches.py pour le principe général. La
+seule donnée qui ne peut PAS venir du site (fetch HTTP) est l'instantané de classement d'avant
+le week-end (data/classements_history/*.csv, committé dans ce repo) : lu directement depuis le
+disque local (le script tourne dans le même checkout que ces fichiers, que ce soit en CI ou en
+local) et passé en paramètre à la fonction JS plutôt que refetché. Le bloc 3 lit la sheet
+"Matchs" publiée en CSV (MATCHS_SHEET_CSV_URL, même source que scripts/result_stories.py) pour
 PhotoEq/Commentaire — données saisies par les coachs via form-score-club-2-.
 
+L'intro (bloc 1) appelle directement l'API Claude (pas de passage par Cowork — décision
+explicite de Julien, 2026-08-20 : Cowork n'a aucun accès à SportsRégions aujourd'hui, un seul
+système de bout en bout est plus simple qu'un aller-retour entre les deux). Ton éditorial dans
+scripts/weekend_news_intro_style.md, chargé tel quel comme consigne — toute évolution du ton se
+fait en éditant ce fichier, sans toucher au code. Contexte envoyé au modèle : le texte brut
+`summaryText` (résultats + commentaires), généré par `summarizeWeekendForAI` (index.html), pas
+le HTML — évite d'avoir à lui apprendre à ignorer les balises.
+
 Usage :
-    python push_weekend_news.py --dry-run                    # génère et affiche le tableau, ne touche rien
+    python push_weekend_news.py --dry-run                    # génère et affiche tout (intro incluse si ANTHROPIC_API_KEY dispo), ne touche rien
     python push_weekend_news.py --dry-run --saturday 2026-09-12
     python push_weekend_news.py                                 # crée + remplit la news (reste Hors ligne, brouillon)
     python push_weekend_news.py --publish                       # crée + remplit + PUBLIE (En ligne, visible publiquement)
@@ -30,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import os
 import re
 import sys
 from pathlib import Path
@@ -40,6 +49,8 @@ from sportsregions_pipeline import admin_bridge, ensure_logged_in, get_credentia
 
 SITE_URL = "https://sportingvillette-beep.github.io/sv-planning-entrainements/"
 HISTORY_DIR = Path(__file__).resolve().parent.parent / "data" / "classements_history"
+INTRO_STYLE_FILE = Path(__file__).resolve().parent / "weekend_news_intro_style.md"
+INTRO_MODEL = "claude-sonnet-5"
 
 GENERATE_JS = """
     async ([saturdayISO, sundayISO, historyText]) => {
@@ -76,11 +87,13 @@ GENERATE_JS = """
         return (r['PhotoEq'] || '').trim() !== '' || (r['Commentaire'] || '').trim() !== '';
       });
       const teamBlocks = renderWeekendTeamBlocks(matchsRows);
+      const summaryText = summarizeWeekendForAI(played, mappingRows, classementsRows, historyText || '', matchsRows);
 
       return {
         count: played.length,
         teamBlocksCount: matchsRows.length,
         html: resultsTable + (teamBlocks ? '\\n<p>&nbsp;</p>\\n' + teamBlocks : ''),
+        summaryText,
       };
     }
 """
@@ -133,6 +146,29 @@ def generate_results_table(page: Page, site_url: str, saturday: datetime.date, s
     saturday_iso = saturday.isoformat()
     sunday_iso = sunday.isoformat()
     return page.evaluate(GENERATE_JS, [saturday_iso, sunday_iso, history_text])
+
+
+def generate_intro(summary_text: str) -> str:
+    """Appelle l'API Claude pour rédiger le court paragraphe d'intro (bloc 1), à partir du
+    résumé texte des résultats/commentaires et du ton éditorial défini dans
+    weekend_news_intro_style.md. Lève une erreur claire si ANTHROPIC_API_KEY est absente —
+    contrairement aux autres secrets de ce projet (best-effort), l'intro est un livrable
+    attendu de ce script, pas une amélioration optionnelle silencieuse."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY absente — impossible de générer l'intro IA.")
+
+    import anthropic  # import différé : dépendance seulement nécessaire pour cette fonction
+
+    style_guide = INTRO_STYLE_FILE.read_text(encoding="utf-8")
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model=INTRO_MODEL,
+        max_tokens=400,
+        system=style_guide,
+        messages=[{"role": "user", "content": summary_text}],
+    )
+    return message.content[0].text.strip()
 
 
 def create_news(page: Page, title: str) -> str:
@@ -200,13 +236,17 @@ def main() -> None:
         saturday = last_weekend_saturday(datetime.date.today())
     sunday = saturday + datetime.timedelta(days=1)
 
-    if not args.dry_run and not get_credentials():
-        print(
-            "!!! Identifiants SportsRégions absents : variables d'environnement "
-            "SPORTSREGIONS_USERNAME / SPORTSREGIONS_PASSWORD non définies.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    if not args.dry_run:
+        if not get_credentials():
+            print(
+                "!!! Identifiants SportsRégions absents : variables d'environnement "
+                "SPORTSREGIONS_USERNAME / SPORTSREGIONS_PASSWORD non définies.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            print("!!! ANTHROPIC_API_KEY absente — nécessaire pour générer l'intro IA.", file=sys.stderr)
+            sys.exit(1)
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not args.headed)
@@ -220,8 +260,18 @@ def main() -> None:
         print(f">>> {result['count']} résultat(s) trouvé(s) pour le week-end du {saturday}.", file=sys.stderr)
         print(f">>> {result['teamBlocksCount']} bloc(s) équipe (photo/commentaire) inclus.", file=sys.stderr)
 
+        intro_html = ""
+        if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            intro_text = generate_intro(result["summaryText"])
+            print(f">>> Intro générée : {intro_text}", file=sys.stderr)
+            intro_html = f"<p>{intro_text}</p>\n<p>&nbsp;</p>\n"
+        elif args.dry_run:
+            print(">>> (ANTHROPIC_API_KEY absente — intro IA non générée pour cet aperçu.)", file=sys.stderr)
+
+        corps_html = intro_html + result["html"]
+
         if args.dry_run:
-            print(result["html"])
+            print(corps_html)
             browser.close()
             return
 
@@ -229,7 +279,7 @@ def main() -> None:
         chapo = default_chapo(saturday, sunday)
         news_id = create_news(page, title)
         print(f">>> News créée (id {news_id}).", file=sys.stderr)
-        fill_news_content(page, news_id, chapo=chapo, corps_html=result["html"])
+        fill_news_content(page, news_id, chapo=chapo, corps_html=corps_html)
         print(">>> Contenu enregistré (Hors ligne).", file=sys.stderr)
         if args.publish:
             publish_news(page, news_id)
