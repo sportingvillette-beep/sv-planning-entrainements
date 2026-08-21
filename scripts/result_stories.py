@@ -75,7 +75,7 @@ def in_scheduled_window(now: datetime = None) -> bool:
 
 def equipe_label(categorie: str, genre: str, indice: str) -> str:
     """'M15', 'G', 'A' -> 'M15G A' (catégorie+genre collés, indice séparé
-    par un espace) — même convention que le gabarit Canva DAHShllgezo."""
+    par un espace) — même convention que le gabarit Canva DAHS8CDDMvk."""
     base = f"{categorie}{genre}" if genre else categorie
     return f"{base} {indice}" if indice else base
 

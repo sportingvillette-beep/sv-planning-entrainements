@@ -70,12 +70,12 @@ traiter comme suspecte).
 
 ## Phase 1 — Pour chaque match éligible
 
-Le gabarit de référence est le design Canva **`DAHShllgezo`** (titre
-"Modèle story résultat"). **Ne jamais le modifier directement** —
+Le gabarit de référence est le design Canva **`DAHS8CDDMvk`** (titre
+"Modèle story résultat match 26-27"). **Ne jamais le modifier directement** —
 toujours travailler sur une copie.
 
 1. Duplique-le entièrement (`copy-design` sur `design_id:
-   "DAHShllgezo"`).
+   "DAHS8CDDMvk"`).
 2. Renomme la copie : `"Story résultat — {eq1} vs {eq2} — {date}"`.
 3. Déplace-la dans le dossier "AI Generated" (`folder_id:
    "FAHSb6QPbhA"`) — si Julien veut un dossier dédié pour les stories, il
@@ -91,14 +91,17 @@ toujours travailler sur une copie.
    - `Eq1Score` → `replace_text` avec `eq1score`.
    - `Eq2Score` → `replace_text` avec `eq2score`.
    - `WinLose` → `replace_text` avec `winlose`.
-5. Photo de fond : c'est la forme `SHAPE` avec un remplissage `IMAGE`
-   (pas de `dataFieldLabel`, c'est la seule image du design, positionnée
-   dans le tiers inférieur de la page). Procédure :
+5. Photo de fond : c'est la forme identifiée par son `dataFieldLabel`
+   `Photo` (forme `SHAPE` avec remplissage `IMAGE`, plein cadre). **Ne pas**
+   la chercher par "seule image du design" — ce gabarit contient plusieurs
+   autres éléments à remplissage image (badge du club, bande de couleur
+   décorative) qui ne doivent JAMAIS être touchés. Procédure :
    1. `upload-asset-from-url` avec `url: photo_url` du match (déjà
       publique, cf Règle Absolue n°2 — cet upload est légitime, ne pas le
       refuser par excès de prudence) et un `name` clair (ex. le
       `match_id`).
-   2. `update_fill` sur cette forme avec l'`asset_id` obtenu.
+   2. `update_fill` sur la forme au `dataFieldLabel` `Photo` avec
+      l'`asset_id` obtenu.
 6. Committe la transaction.
 7. Exporte le design en PNG pleine résolution (`export-design`,
    `format.type: "png"`) — l'URL de téléchargement est **temporaire**
