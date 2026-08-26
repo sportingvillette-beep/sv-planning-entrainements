@@ -51,8 +51,9 @@ fragile et non fiable si improvisé.
 Le JSON contient :
 - `weekend_label` (ex. `"17 & 18 JAN."`) — à écrire sur chaque page.
 - `pages` : un objet avec au plus les clés `"M7_M9"`, `"M11"`, `"M13"`,
-  `"M15"`, `"M16_M17"`, `"M18"`, `"Seniors"` — **seules les clés avec au
-  moins un match sont présentes**. Chaque valeur est une liste de lignes
+  `"M15"`, `"M16_M17"`, `"M18"`, `"Loisirs"`, `"Seniors"` — **seules les
+  clés avec au moins un match sont présentes**. Chaque valeur est une liste
+  de lignes
   `{equipe, jour, recevant, visiteur, lieu, journee, us_side}` (`journee`
   = numéro de journée FFHB, utile pour le contexte de la Phase 3, pas une
   colonne à afficher ; `us_side` = `"recevant"` ou `"visiteur"`, indique
@@ -76,7 +77,7 @@ une copie.
 
 1. Duplique-le entièrement (`copy-design` sur `design_id: "DAHSb3SEpJ4"`)
    pour créer le post de cette semaine.
-2. Vérifie que la copie a bien 9 pages (`page_count`). Si ce n'est pas le
+2. Vérifie que la copie a bien 10 pages (`page_count`). Si ce n'est pas le
    cas, arrête-toi et signale-le au lieu de continuer sur une base
    incomplète.
 3. Renomme le design copié : `"Post planning matchs — {weekend_label}"`
@@ -89,7 +90,7 @@ une copie.
    rapport final (avec l'`edit_url`, pour qu'il retrouve le design même
    mal rangé).
 
-Structure des 9 pages de ce design (fixe, toujours dans cet ordre) :
+Structure des 10 pages de ce design (fixe, toujours dans cet ordre) :
 
 | Page | Contenu | Clé JSON |
 |---|---|---|
@@ -101,16 +102,20 @@ Structure des 9 pages de ce design (fixe, toujours dans cet ordre) :
 | 6 | M15 | `M15` |
 | 7 | M16 M17 | `M16_M17` |
 | 8 | M18 | `M18` |
-| 9 | Seniors | `Seniors` |
+| 9 | Loisirs | `Loisirs` |
+| 10 | Seniors | `Seniors` |
 
-Pages 3 à 9 ont 5 colonnes : Équipe / Jour / Recevant / Visiteur / Lieu
-du match.
+Pages 3 à 10 ont 5 colonnes : Équipe / Jour / Recevant / Visiteur / Lieu
+du match. La page Loisirs (9) fonctionne exactement comme les autres pages
+catégorie — seule différence : ses matchs (`jour` du JSON) tombent en
+semaine plutôt que le week-end, c'est normal, ne pas s'en étonner ni le
+"corriger".
 
 ---
 
-## Phase 2 — Mettre à jour la date sur les 9 pages
+## Phase 2 — Mettre à jour la date sur les 10 pages
 
-Sur **chaque** page (1 à 9), il y a un texte de date au format
+Sur **chaque** page (1 à 10), il y a un texte de date au format
 `"17 & 18 JAN."` (grande police ~120pt, distinct du titre de catégorie
 et du texte "PLANNING DES MATCHS"). Remplace son contenu par
 `weekend_label` du JSON (`replace_text`).
@@ -150,9 +155,9 @@ et passe à la suite sans bloquer.
 
 ---
 
-## Phase 4 — Remplir chaque page catégorie (pages 3 à 9)
+## Phase 4 — Remplir chaque page catégorie (pages 3 à 10)
 
-Pour chaque page dans l'ordre (3, 4, 5, 6, 7, 8, 9), fais ce qui suit
+Pour chaque page dans l'ordre (3, 4, 5, 6, 7, 8, 9, 10), fais ce qui suit
 dans une transaction dédiée (`read-design` avec `open_transaction: true`,
 scope `filter.page_indices` sur cette seule page pour rester léger) :
 
@@ -253,7 +258,7 @@ du match"). Si `domicile` est vide, applique le même traitement "Cas A"
 
 ## Phase 6 — Vérification finale
 
-Relis le design entier (9 pages, aucune supprimée) pour un contrôle
+Relis le design entier (10 pages, aucune supprimée) pour un contrôle
 visuel rapide : pas de chevauchement de texte visible, pages "pas de
 match" lisibles et bien centrées, dates et sous-titre cohérents partout.
 
@@ -269,7 +274,7 @@ lui.
 ## Phase 7 — Exporter en PNG et déposer sur Drive
 
 1. Exporte chaque page du design en PNG (`export-design`, `format.type:
-   "png"`, sans `pages` précisé pour exporter les 9 en une fois — vérifie
+   "png"`, sans `pages` précisé pour exporter les 10 en une fois — vérifie
    d'abord `get-export-formats` sur ce design si tu as un doute).
 2. Les URLs renvoyées sont **temporaires** (expirent en quelques heures) —
    télécharge chaque fichier immédiatement plutôt que de te contenter de
@@ -277,7 +282,7 @@ lui.
    `export-download.canva.com` inaccessible depuis ton environnement) :
    n'insiste pas, passe directement à l'étape 5 (échec à signaler), le
    reste de la Phase 7 devient sans objet sans les fichiers en main.
-3. Une fois les 9 PNG en main localement, dépose-les un par un via le
+3. Une fois les 10 PNG en main localement, dépose-les un par un via le
    script `deposit_drive_asset.py` (pas d'accès direct à Google Drive) :
 
    ```
@@ -290,13 +295,13 @@ lui.
    Nomme chaque fichier local de façon à ce que Julien s'y retrouve
    facilement depuis son téléphone, ex. `01-couverture.png`,
    `02-a-domicile.png`, `03-m7-m9.png`, `04-m11.png`, `05-m13.png`,
-   `06-m15.png`, `07-m16-m17.png`, `08-m18.png`, `09-seniors.png`
-   (numérotées dans l'ordre des pages). `<weekend_label>` (ex. `"17 & 18
-   JAN."`) regroupe les 9 fichiers de ce run dans un même sous-dossier de
-   "Temp posts Instagram" — n'invente pas d'autre emplacement, le script
-   gère seul la création du sous-dossier.
+   `06-m15.png`, `07-m16-m17.png`, `08-m18.png`, `09-loisirs.png`,
+   `10-seniors.png` (numérotées dans l'ordre des pages). `<weekend_label>`
+   (ex. `"17 & 18 JAN."`) regroupe les 10 fichiers de ce run dans un même
+   sous-dossier de "Temp posts Instagram" — n'invente pas d'autre
+   emplacement, le script gère seul la création du sous-dossier.
 4. Chaque appel réussi renvoie un JSON `{"ok": true, "url": "...",
-   "fileId": "..."}` — garde ces 9 URLs pour le rapport final (lien direct
+   "fileId": "..."}` — garde ces 10 URLs pour le rapport final (lien direct
    cliquable depuis le téléphone de Julien, pas besoin qu'il navigue dans
    Drive).
 5. Si l'export, le téléchargement ou le dépôt échoue à un moment
@@ -315,8 +320,8 @@ lui.
   "Pas de match ce week-end" (et pourquoi).
 - Le contenu de `warnings` du JSON (Phase 0), s'il y en a.
 - Tout cas C rencontré (page trop petite pour le nombre de matchs).
-- Les 9 liens Drive renvoyés par `deposit_drive_asset.py` (ou l'échec
+- Les 10 liens Drive renvoyés par `deposit_drive_asset.py` (ou l'échec
   rencontré, verbatim, avec l'edit_url Canva en secours).
 - Toute erreur rencontrée à n'importe quelle étape, verbatim.
 
-Le design final a toujours 9 pages (aucune page n'est jamais supprimée).
+Le design final a toujours 10 pages (aucune page n'est jamais supprimée).

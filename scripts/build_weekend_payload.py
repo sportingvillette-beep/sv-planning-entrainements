@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Construit le payload JSON des matchs du prochain week-end, regroupés par
-page du post Instagram "planning des matchs" (Canva).
+"""Construit le payload JSON des matchs à venir, regroupés par page du post
+Instagram "planning des matchs" (Canva). Les matchs retenus sont ceux
+tombant dans la fenêtre du mercredi au mardi suivant (centrée sur le
+prochain week-end samedi/dimanche) — voir target_window() ; cette fenêtre
+plus large que le seul week-end existe pour inclure les matchs Loisirs,
+joués en semaine.
 
 Source de données : `data/calendrier_club.csv` (un match par ligne) et
 `scraper/team_mapping.csv` (identifie quel côté domicile/extérieur est
@@ -49,7 +53,7 @@ MONTH_ABBR_FR = {
     1: "JAN", 2: "FÉV", 3: "MARS", 4: "AVR", 5: "MAI", 6: "JUIN",
     7: "JUIL", 8: "AOÛT", 9: "SEPT", 10: "OCT", 11: "NOV", 12: "DÉC",
 }
-WEEKDAY_ABBR_FR = {5: "Sam", 6: "Dim"}  # Python weekday(): Monday=0..Sunday=6
+WEEKDAY_ABBR_FR = {0: "Lun", 1: "Mar", 2: "Mer", 3: "Jeu", 4: "Ven", 5: "Sam", 6: "Dim"}  # Python weekday(): Monday=0..Sunday=6
 
 # Sigles de club confirmés dans les données réelles — à garder tels quels
 # plutôt que de les casser en 'Hbc'/'As'/'Us' (voir title_case_fr). Étendre
@@ -64,9 +68,10 @@ FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
 ELISION_RE = re.compile(r"^(d|l|n|j|m|t|s|c|qu)['’](\w.*)$", re.IGNORECASE)
 
 # Regroupement des catégories en pages du gabarit Canva (ordre = ordre des
-# pages 3 à 9 du design DAHSb3SEpJ4). Catégories volontairement absentes
-# (pas de championnat) : M5, Loisirs, Handfit.
-PAGE_ORDER = ["M7_M9", "M11", "M13", "M15", "M16_M17", "M18", "Seniors"]
+# pages 3 à 10 du design DAHSb3SEpJ4). Catégories volontairement absentes
+# (pas de championnat) : M5, Handfit. Loisirs joue en semaine (pas le
+# week-end) — voir target_window() ci-dessous.
+PAGE_ORDER = ["M7_M9", "M11", "M13", "M15", "M16_M17", "M18", "Loisirs", "Seniors"]
 CATEGORIE_TO_PAGE = {
     "M7": "M7_M9", "M9": "M7_M9",
     "M11": "M11",
@@ -74,9 +79,10 @@ CATEGORIE_TO_PAGE = {
     "M15": "M15",
     "M16": "M16_M17", "M17": "M16_M17",
     "M18": "M18",
+    "Loisirs": "Loisirs",
     "Seniors": "Seniors",
 }
-CATEGORIE_SORT_ORDER = {"M7": 0, "M9": 1, "M11": 2, "M13": 3, "M15": 4, "M16": 5, "M17": 6, "M18": 7, "Seniors": 8}
+CATEGORIE_SORT_ORDER = {"M7": 0, "M9": 1, "M11": 2, "M13": 3, "M15": 4, "M16": 5, "M17": 6, "M18": 7, "Loisirs": 8, "Seniors": 9}
 GENRE_SORT_ORDER = {"F": 0, "G": 1, "": 2}
 
 DATE_RE = re.compile(r"(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})(?:\s+à\s+(\d{1,2})[hH](\d{2}))?")
@@ -171,6 +177,24 @@ def next_saturday(today: date) -> date:
     return today + timedelta(days=(5 - wd))
 
 
+def target_window(today: date):
+    """Fenêtre de sélection des matchs : du mercredi au mardi suivant,
+    centrée sur le prochain week-end (samedi/dimanche). Demande de Julien
+    (2026-08-26) : la tâche édite le planning le mardi soir pour publication
+    le mercredi, donc il faut annoncer "du mercredi au mardi suivant" pour
+    inclure les matchs Loisirs (seule catégorie jouée en semaine, jamais le
+    week-end) — sans conséquence pour les autres catégories, dont les matchs
+    tombent de toute façon toujours dans cette fenêtre puisqu'elle englobe le
+    week-end. Dérivée de next_saturday() (déjà éprouvée) plutôt que
+    recalculée indépendamment, pour rester robuste quel que soit le jour
+    exact où le script tourne."""
+    saturday = next_saturday(today)
+    sunday = saturday + timedelta(days=1)
+    wednesday = saturday - timedelta(days=3)
+    tuesday = saturday + timedelta(days=3)
+    return wednesday, tuesday, saturday, sunday
+
+
 def weekend_label(saturday: date, sunday: date) -> str:
     if saturday.month == sunday.month:
         return f"{saturday.day} & {sunday.day} {MONTH_ABBR_FR[saturday.month]}."
@@ -210,9 +234,8 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
     calendrier_rows = _read_csv(calendrier_source)
     team_index = load_team_mapping(team_mapping_source)
 
-    saturday = next_saturday(today)
-    sunday = saturday + timedelta(days=1)
-    target_dates = {saturday, sunday}
+    wednesday, tuesday, saturday, sunday = target_window(today)
+    target_dates = {wednesday + timedelta(days=i) for i in range(7)}
 
     pages = {p: [] for p in PAGE_ORDER}
     domicile = []
@@ -225,12 +248,12 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
         categorie = row.get("categorie", "")
         phase = row.get("phase", "")
         if not section or categorie not in CATEGORIE_TO_PAGE:
-            continue  # catégorie hors périmètre (M5/Loisirs/Handfit) ou ligne vide
+            continue  # catégorie hors périmètre (M5/Handfit) ou ligne vide
 
         parsed = parse_french_dates(row.get("date/heure", ""))
         match_dates = [d for d, _ in parsed]
         if not any(d in target_dates for d in match_dates):
-            continue  # pas ce week-end-là
+            continue  # pas dans la fenêtre mercredi -> mardi suivant
 
         confirmee = row.get("date_confirmee", "").strip().lower() == "true"
         match_date = next((d for d in match_dates if d in target_dates), None)
