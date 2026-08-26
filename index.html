@@ -1085,7 +1085,10 @@ function renderCalendriersClassementsPage(mappingRows, classementsRows, calendri
   function teamLabel(r) {
     const g = (r['genre'] === 'F' || r['genre'] === 'G') ? r['genre'] : '';
     let label = r['categorie'] + g;
-    if (r['indice']) label += ' ' + r['indice'];
+    // Équipes Loisirs (Mixte/G/F) : `indice` vaut le genre lui-même (seul moyen de les
+    // distinguer dans team_mapping.csv, qui n'a ni indice ni phase FFHB pour ça — voir
+    // build_weekend_payload.py côté Python, même piège). Sans ce garde-fou, "LoisirsG G".
+    if (r['indice'] && r['indice'].toLowerCase() !== (r['genre'] || '').toLowerCase()) label += ' ' + r['indice'];
     return label;
   }
   // Nombre de matchs déjà joués (score connu) pour cette équipe+phase — exclut les amicaux
@@ -1700,7 +1703,10 @@ async function loadTeamCheckboxes() {
   const box = document.getElementById('team-checkboxes');
   box.textContent = 'Chargement des équipes...';
   try {
-    const rows = await loadTeamMappingRows();
+    // poule_url vide = pas de championnat FFHB (ex. Loisirs, présentes dans team_mapping.csv
+    // seulement pour le rapprochement domicile/extérieur des matchs saisis à la main) — rien
+    // à rafraîchir pour elles, on ne les propose pas dans la liste à cocher.
+    const rows = (await loadTeamMappingRows()).filter(r => (r['poule_url'] || '').trim() !== '');
     if (!rows.length) { box.innerHTML = '<span class="muted">Aucune équipe dans le mapping.</span>'; return; }
     box.innerHTML = rows.map(r => `<label class="team-check"><input type="checkbox" value="${r['id']}"> ${teamMappingLabel(r)}</label>`).join('');
   } catch (err) {

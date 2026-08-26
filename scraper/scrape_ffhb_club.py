@@ -467,7 +467,11 @@ def run_club_scrape(outdir: str):
         return
     mapping = pd.read_csv(mapping_path, encoding="utf-8-sig")
     mapping["equipe_ffhb_proposee"] = mapping["equipe_ffhb_proposee"].fillna("").astype(str).str.strip()
-    mapping = mapping[mapping["equipe_ffhb_proposee"] != ""]
+    mapping["poule_url"] = mapping["poule_url"].fillna("").astype(str).str.strip()
+    # poule_url != "" exclut les équipes sans championnat FFHB (ex. Loisirs, ajoutées à la
+    # main dans team_mapping.csv juste pour le rapprochement domicile/extérieur des matchs
+    # saisis manuellement — voir build_weekend_payload.py) : rien à scraper pour elles.
+    mapping = mapping[(mapping["equipe_ffhb_proposee"] != "") & (mapping["poule_url"] != "")]
     if mapping.empty:
         print("⚠ Aucune équipe avec un nom FFHB validé dans team_mapping.csv.")
         return
@@ -580,7 +584,12 @@ def run_club_scrape_ci(mapping_dir: str, outdir: str, teams_filter: str):
 
     mapping = pd.read_csv(mapping_path, encoding="utf-8-sig")
     mapping["equipe_ffhb_proposee"] = mapping["equipe_ffhb_proposee"].fillna("").astype(str).str.strip()
-    mapping = mapping[mapping["equipe_ffhb_proposee"] != ""]
+    mapping["poule_url"] = mapping["poule_url"].fillna("").astype(str).str.strip()
+    # poule_url != "" exclut les équipes sans championnat FFHB (ex. Loisirs, ajoutées à la
+    # main dans team_mapping.csv juste pour le rapprochement domicile/extérieur des matchs
+    # saisis manuellement — voir build_weekend_payload.py) : rien à scraper pour elles, sans
+    # ce filtre le run nocturne échouerait dessus (URL vide) à chaque passage.
+    mapping = mapping[(mapping["equipe_ffhb_proposee"] != "") & (mapping["poule_url"] != "")]
 
     ids_filter = [s.strip() for s in teams_filter.split(",") if s.strip()] if teams_filter else []
     if ids_filter:
