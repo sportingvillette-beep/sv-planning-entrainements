@@ -68,10 +68,12 @@ FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
 ELISION_RE = re.compile(r"^(d|l|n|j|m|t|s|c|qu)['’](\w.*)$", re.IGNORECASE)
 
 # Regroupement des catégories en pages du gabarit Canva (ordre = ordre des
-# pages 3 à 10 du design DAHSb3SEpJ4). Catégories volontairement absentes
-# (pas de championnat) : M5, Handfit. Loisirs joue en semaine (pas le
-# week-end) — voir target_window() ci-dessous.
-PAGE_ORDER = ["M7_M9", "M11", "M13", "M15", "M16_M17", "M18", "Loisirs", "Seniors"]
+# pages 3 à 10 du design DAHSb3SEpJ4, vérifié directement via l'API Canva
+# le 2026-08-26 : Seniors est en page 9, Loisirs en page 10 — donc APRÈS
+# Seniors, pas avant). Catégories volontairement absentes (pas de
+# championnat) : M5, Handfit. Loisirs joue en semaine (pas le week-end) —
+# voir target_window() ci-dessous.
+PAGE_ORDER = ["M7_M9", "M11", "M13", "M15", "M16_M17", "M18", "Seniors", "Loisirs"]
 CATEGORIE_TO_PAGE = {
     "M7": "M7_M9", "M9": "M7_M9",
     "M11": "M11",
@@ -82,7 +84,7 @@ CATEGORIE_TO_PAGE = {
     "Loisirs": "Loisirs",
     "Seniors": "Seniors",
 }
-CATEGORIE_SORT_ORDER = {"M7": 0, "M9": 1, "M11": 2, "M13": 3, "M15": 4, "M16": 5, "M17": 6, "M18": 7, "Loisirs": 8, "Seniors": 9}
+CATEGORIE_SORT_ORDER = {"M7": 0, "M9": 1, "M11": 2, "M13": 3, "M15": 4, "M16": 5, "M17": 6, "M18": 7, "Seniors": 8, "Loisirs": 9}
 GENRE_SORT_ORDER = {"F": 0, "G": 1, "": 2}
 
 DATE_RE = re.compile(r"(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})(?:\s+à\s+(\d{1,2})[hH](\d{2}))?")

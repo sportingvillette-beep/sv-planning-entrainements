@@ -51,7 +51,7 @@ fragile et non fiable si improvisé.
 Le JSON contient :
 - `weekend_label` (ex. `"17 & 18 JAN."`) — à écrire sur chaque page.
 - `pages` : un objet avec au plus les clés `"M7_M9"`, `"M11"`, `"M13"`,
-  `"M15"`, `"M16_M17"`, `"M18"`, `"Loisirs"`, `"Seniors"` — **seules les
+  `"M15"`, `"M16_M17"`, `"M18"`, `"Seniors"`, `"Loisirs"` — **seules les
   clés avec au moins un match sont présentes**. Chaque valeur est une liste
   de lignes
   `{equipe, jour, recevant, visiteur, lieu, journee, us_side}` (`journee`
@@ -102,11 +102,11 @@ Structure des 10 pages de ce design (fixe, toujours dans cet ordre) :
 | 6 | M15 | `M15` |
 | 7 | M16 M17 | `M16_M17` |
 | 8 | M18 | `M18` |
-| 9 | Loisirs | `Loisirs` |
-| 10 | Seniors | `Seniors` |
+| 9 | Seniors | `Seniors` |
+| 10 | Loisirs | `Loisirs` |
 
 Pages 3 à 10 ont 5 colonnes : Équipe / Jour / Recevant / Visiteur / Lieu
-du match. La page Loisirs (9) fonctionne exactement comme les autres pages
+du match. La page Loisirs (10) fonctionne exactement comme les autres pages
 catégorie — seule différence : ses matchs (`jour` du JSON) tombent en
 semaine plutôt que le week-end, c'est normal, ne pas s'en étonner ni le
 "corriger".
@@ -295,8 +295,8 @@ lui.
    Nomme chaque fichier local de façon à ce que Julien s'y retrouve
    facilement depuis son téléphone, ex. `01-couverture.png`,
    `02-a-domicile.png`, `03-m7-m9.png`, `04-m11.png`, `05-m13.png`,
-   `06-m15.png`, `07-m16-m17.png`, `08-m18.png`, `09-loisirs.png`,
-   `10-seniors.png` (numérotées dans l'ordre des pages). `<weekend_label>`
+   `06-m15.png`, `07-m16-m17.png`, `08-m18.png`, `09-seniors.png`,
+   `10-loisirs.png` (numérotées dans l'ordre des pages). `<weekend_label>`
    (ex. `"17 & 18 JAN."`) regroupe les 10 fichiers de ce run dans un même
    sous-dossier de "Temp posts Instagram" — n'invente pas d'autre
    emplacement, le script gère seul la création du sous-dossier.
