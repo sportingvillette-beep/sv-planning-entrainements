@@ -202,10 +202,15 @@ def weekend_label(saturday: date, sunday: date) -> str:
 
 
 def equipe_label(categorie: str, genre: str, indice: str) -> str:
+    """Pour les équipes Loisirs, `indice` vaut le genre lui-même (seul moyen
+    de distinguer les 3 équipes Mixte/G/F dans team_mapping.csv, qui n'ont
+    ni indice ni phase FFHB pour les différencier — voir team_mapping.csv).
+    Sans le if ci-dessous, ça donnerait "Loisirs G G" au lieu de "Loisirs
+    G"."""
     parts = [categorie]
     if genre:
         parts.append(genre)
-    if indice:
+    if indice and indice.casefold() != genre.casefold():
         parts.append(indice)
     return " ".join(parts)
 
