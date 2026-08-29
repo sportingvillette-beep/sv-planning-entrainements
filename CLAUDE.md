@@ -537,10 +537,13 @@ touché dans ce projet.
 
 ## `form-score-club-2-` — saisie score/photo/commentaire en direct
 
-Repo séparé : `sportingvillette-beep/form-score-club-2-`, même workflow de
-collaboration (branche/PR/"ON MERGE"). Hébergé sur GitHub Pages :
-`https://sportingvillette-beep.github.io/form-score-club-2-/`. Fichier
-unique `index.html`, même philosophie que `sv-planning-entrainements`
+Repo séparé : `sportingvillette-beep/sportingvillette-beep.github.io`
+(renommé le 2026-08-26, ex `form-score-club-2-`, pour obtenir une URL
+courte sans dépendre du domaine `sportingvillette.com` délégué à
+SportsRégions — clone local resté au chemin/nom `form-score-club-2-` par
+commodité), même workflow de collaboration (branche/PR/"ON MERGE").
+Hébergé sur GitHub Pages : `https://sportingvillette-beep.github.io/`.
+Fichier unique `index.html`, même philosophie que `sv-planning-entrainements`
 (pas de build, pas de dépendance externe).
 
 ### Deux vues dans la même page, pilotées par `?match_id=`
