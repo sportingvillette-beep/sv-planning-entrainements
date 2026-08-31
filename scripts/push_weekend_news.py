@@ -63,7 +63,16 @@ GENERATE_JS = """
       const calendrierRows = parseCSV(calText);
       const mappingRows = parseCSV(mapText).filter(r => (r['equipe_ffhb_proposee'] || '').trim() !== '');
       const classementsRows = parseCSV(clText);
+      // Fenêtre élargie du lundi (5 jours avant le samedi) au dimanche soir — englobe toute la
+      // semaine qui précède le week-end, pas seulement samedi-dimanche, pour inclure les matchs
+      // joués en semaine (amicaux, futurs matchs Loisirs). Même règle et même demande de Julien
+      // que build_weekend_payload.py (target_window) et form-score-club-2-/index.html
+      // (weekendRangeFromSaturday) — voir ces fichiers pour le détail. `start` reste construit
+      // en UTC minuit (setDate/getDate opèrent en heure locale mais préservent l'heure de la
+      // journée, donc restent cohérents avec l'heure UTC minuit d'origine — vérifié) : cohérent
+      // avec parseSheetDate() ci-dessous (Date.UTC).
       const start = new Date(saturdayISO), end = new Date(sundayISO);
+      start.setDate(start.getDate() - 5);
       end.setHours(23, 59, 59, 999);
 
       const played = calendrierRows.filter(r => {
