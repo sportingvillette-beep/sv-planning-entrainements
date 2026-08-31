@@ -74,10 +74,15 @@ GENERATE_JS = """
 
       // Sheet Matchs : Date au format DD/MM/YYYY (pas le même format que calendrier_club.csv,
       // colonne séparée de Heure) — parsing dédié, pas de fonction existante réutilisable ici.
+      // Construit en UTC (Date.UTC), pas avec le constructeur local : `start`/`end` viennent de
+      // `new Date(saturdayISO)` sur une chaîne AAAA-MM-JJ, que le spec ECMAScript parse en UTC
+      // minuit — un Date construit en heure locale (été = UTC+2) tombait donc systématiquement
+      // ~2h AVANT `start`, excluant purement et simplement TOUS les matchs, bug jamais détecté
+      // avant le tout premier run réel avec de vraies données (2026-08-31).
       function parseSheetDate(dateStr) {
         const m = (dateStr || '').match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);
         if (!m) return null;
-        return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+        return new Date(Date.UTC(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10)));
       }
       const matchsRows = parseCSV(matchsText).filter(r => {
         const d = parseSheetDate(r['Date']);
