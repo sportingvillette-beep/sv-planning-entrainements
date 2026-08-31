@@ -78,8 +78,27 @@ def login(page: Page, timeout_2fa_ms: int = 120_000) -> None:
         )
     username, password = creds
 
-    page.goto(SITE_URL)
-    page.click(SEL_OPEN_LOGIN)
+    # page.goto + l'ouverture du formulaire ont chacun timeouté au moins une fois sur 4
+    # tentatives depuis GitHub Actions le 2026-08-31 (page.goto puis page.click(SEL_OPEN_LOGIN),
+    # séparément) — même famille de flakiness réseau transitoire que déjà documentée pour
+    # push_sportsregions_fiches.py (net::ERR_TIMED_OUT en plein lot, 2026-08-18). 1 retry avant
+    # d'abandonner, mais seulement sur cette étape AVANT tout remplissage de formulaire — jamais
+    # retenter après avoir déjà rempli/soumis, pour ne pas risquer une double soumission ou
+    # d'interférer avec une 2FA déjà déclenchée.
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            page.goto(SITE_URL)
+            page.click(SEL_OPEN_LOGIN)
+            last_error = None
+            break
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                print(f">>> Timeout/erreur au chargement de {SITE_URL} ({e}) — nouvelle tentative...")
+                page.wait_for_timeout(3_000)
+    if last_error is not None:
+        raise last_error
     page.fill(SEL_IDENTIFIANT, username)
     page.fill(SEL_PASSWORD, password)
     page.click(SEL_SUBMIT)
