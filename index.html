@@ -1174,6 +1174,13 @@ function renderWeekendResultsTable(rows, mappingRows, classementsRows, historyTe
       .filter(c => keyMatch(c, ref))
       .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
     if (!current.length) return '';
+    // Début de saison : tout le monde à 0 point, un classement n'aurait aucun sens tant
+    // qu'aucun match n'a été joué dans la poule — même règle que poulePos() ci-dessus
+    // (demande de Julien, 2026-08-20). Concerne aussi tout match AMICAL d'une équipe dont
+    // le vrai championnat n'a pas encore démarré : le classement de la poule est encore à
+    // 0 partout, ne pas afficher un rang qui n'a pas de sens pour un match hors championnat.
+    const allZero = current.every(c => !(parseInt(c['Points'], 10) > 0));
+    if (allZero) return '';
     const curPos = findPosInPoule(current, ref['equipe_ffhb_proposee']);
     if (!curPos) return '';
     let evolution = '';
@@ -1273,6 +1280,11 @@ function summarizeWeekendForAI(resultRows, mappingRows, classementsRows, history
       .filter(c => keyMatch(c, ref))
       .sort((a, b) => (parseInt(a['Pos.'], 10) || 0) - (parseInt(b['Pos.'], 10) || 0));
     if (!current.length) return '';
+    // Même règle que classementCell()/poulePos() : pas de classement tant que tout le
+    // monde est à 0 point dans la poule (début de saison, ou match amical d'une équipe
+    // dont le championnat n'a pas encore démarré).
+    const allZero = current.every(c => !(parseInt(c['Points'], 10) > 0));
+    if (allZero) return '';
     const curPos = findPosInPoule(current, ref['equipe_ffhb_proposee']);
     if (!curPos) return '';
     let evolution = '';
