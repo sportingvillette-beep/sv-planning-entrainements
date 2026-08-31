@@ -1254,7 +1254,13 @@ function renderWeekendTeamBlocks(rows) {
     const eq2 = r['Eq2'] || '';
     const score = `${r['Eq1Score'] || ''} - ${r['Eq2Score'] || ''}`;
     const photo = (r['PhotoEq'] || '').trim();
-    const photoPart = photo ? `<p><img src="${photo}" style="max-width:100%;" alt="${label}"></p>` : '';
+    // align="center" (attribut HTML, pas une règle CSS) + width en attribut HTML plutôt qu'en
+    // style — même raison que align="center" sur <table> ailleurs dans ce fichier : survit au
+    // filtrage de l'éditeur SportsRégions, contrairement à du CSS inline. Les photos (souvent
+    // des photos de téléphone à pleine résolution) s'affichaient énormes avec juste
+    // max-width:100% (style CSS, pas de garantie de survie + 100% d'une colonne d'article reste
+    // grand) — largeur fixe à 480px, centrée. Demande de Julien, 2026-08-31.
+    const photoPart = photo ? `<p align="center"><img src="${photo}" alt="${label}" width="480" style="max-width:100%;"></p>` : '';
     const comment = (r['Commentaire'] || '').trim();
     const commentPart = comment ? `<p><i>« ${comment} »</i></p>` : '';
     return `<p>&nbsp;</p>
