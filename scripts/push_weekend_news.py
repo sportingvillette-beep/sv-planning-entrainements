@@ -221,6 +221,34 @@ def fill_news_content(page: Page, news_id: str, *, chapo: str, corps_html: str, 
     page.wait_for_load_state("networkidle")
 
 
+ILLUSTRATION_LABEL = "Illustrations News Site"
+
+
+def set_illustration(page: Page, illustration_label: str = ILLUSTRATION_LABEL) -> None:
+    """Sélectionne l'illustration fixe déjà déposée une fois pour toutes dans la Galerie
+    SportsRégions (catégorie "Vos illustrations d'actualités") plutôt que d'en uploader une
+    nouvelle à chaque run — demande de Julien, 2026-08-31 : une seule image "Résumé du Week
+    End" réutilisée à l'identique chaque semaine. Suppose d'être déjà sur la page
+    /actualite/edit/<id> (appelée juste après fill_news_content, même page/session).
+
+    `illustration_label` = le texte que Julien a associé à l'image en l'uploadant, censé
+    apparaître en alt/title sur la vignette dans le sélecteur "Galerie" (grille de vignettes
+    sans légende visible constatée par capture d'écran — la correspondance texte visible est un
+    repli au cas où). **Jamais vérifié en conditions réelles** (accès interface indisponible en
+    session pour inspecter le DOM du sélecteur) — le sélecteur exact pourrait nécessiter un
+    ajustement au 1er run réel, ne pas supposer que ça fonctionne du premier coup."""
+    page.click("text=Galerie")
+    page.wait_for_selector("text=Sélectionnez une image", state="visible")
+    page.click("text=Vos illustrations d'actualités")
+    page.wait_for_timeout(500)
+    locator = page.locator(f'img[alt="{illustration_label}"], img[title="{illustration_label}"]')
+    if locator.count() == 0:
+        locator = page.locator(f"text={illustration_label}")
+    locator.first.click()
+    page.click("button:has-text('Valider')")
+    page.wait_for_timeout(1000)
+
+
 def publish_news(page: Page, news_id: str) -> None:
     page.goto(admin_bridge(f"/actualite/edit/{news_id}"))
     page.wait_for_load_state("networkidle")
@@ -295,6 +323,14 @@ def main() -> None:
         print(f">>> News créée (id {news_id}).", file=sys.stderr)
         fill_news_content(page, news_id, chapo=chapo, corps_html=corps_html)
         print(">>> Contenu enregistré (Hors ligne).", file=sys.stderr)
+        try:
+            set_illustration(page)
+            print(">>> Illustration sélectionnée.", file=sys.stderr)
+        except Exception as e:
+            # Best-effort : jamais vérifié en conditions réelles (voir docstring de
+            # set_illustration) — un échec ici ne doit pas faire perdre le contenu déjà
+            # enregistré, juste être signalé pour ajout manuel par Julien.
+            print(f">>> Échec de la sélection d'illustration ({e}) — à ajouter manuellement.", file=sys.stderr)
         if args.publish:
             publish_news(page, news_id)
             print(">>> News publiée (En ligne).", file=sys.stderr)
