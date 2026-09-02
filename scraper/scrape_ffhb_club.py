@@ -398,6 +398,17 @@ def _clean_opponent(raw: str):
     base, idx = split_trailing_index(stripped)
     return title_case_fr(base), idx
 
+def _format_clean_opponent(raw: str) -> str:
+    """Comme _clean_opponent, mais renvoie la chaîne assemblée ("Base - Idx" si un indice
+    est détecté, sinon juste "Base") — même format que clean_opponent_label()/
+    cleanOpponentLabel() côté affichage (build_weekend_payload.py / index.html). Utilisée
+    pour nettoyer domicile/extérieur juste avant l'écriture dans calendrier_club.csv (voir
+    scrape_one_mapping_row) : jusqu'ici seule la sheet Matchs recevait ce nettoyage (via
+    _clean_opponent, dans build_match_payload), calendrier_club.csv gardait le nom FFHB brut
+    (préfixe de poule + majuscules) — visible en clair par Julien, signalé le 2026-09-02."""
+    base, idx = _clean_opponent(raw)
+    return f"{base} - {idx}" if idx else base
+
 def _s(v) -> str:
     """Convertit en chaîne en traitant NaN/None comme une chaîne vide (pandas transforme
     sinon un NaN en la chaîne littérale 'nan' via str())."""
@@ -559,10 +570,16 @@ def scrape_one_mapping_row(page, poule_cache: dict, salle_cache: dict, t: dict, 
             team_df.insert(0, "categorie", t["categorie"])
             team_df.insert(0, "indice", t["indice"])
             team_df.insert(0, "section", t["section"])
-            team_calendrier = team_df
-            n_synced = sync_matches_to_sheet(team_calendrier, t)
+            n_synced = sync_matches_to_sheet(team_df, t)
             if n_synced:
                 print(f"  ✔ {n_synced} match(s) synchronisé(s) vers la sheet Matchs.")
+            # Nettoyage domicile/extérieur (préfixe de poule FFHB + casse) APRÈS la synchro
+            # sheet, jamais avant : build_match_payload() compare domicile/extérieur BRUTS à
+            # equipe_ffhb_proposee (égalité stricte) pour savoir quel côté est nous — nettoyer
+            # plus tôt casserait cette comparaison pour CHAQUE match du club.
+            team_df["domicile"] = team_df["domicile"].apply(_format_clean_opponent)
+            team_df["extérieur"] = team_df["extérieur"].apply(_format_clean_opponent)
+            team_calendrier = team_df
         else:
             print("  ⚠ Aucun match trouvé pour ce nom d'équipe dans la poule (mapping probablement faux).")
 
