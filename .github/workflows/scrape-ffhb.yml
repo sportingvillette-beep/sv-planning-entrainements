@@ -67,6 +67,14 @@ jobs:
             --outdir data \
             --teams "${{ github.event.inputs.teams }}"
 
+      - name: Synchroniser les matchs amicaux saisis à la main dans la sheet Matchs
+        # Un match amical (journée="Amical") n'est jamais scrapé depuis FFHB — sans cette
+        # étape, il resterait invisible du post Instagram, de la page "Calendrier &
+        # résultats" et de la news hebdomadaire, même déjà saisi par Julien dans la sheet.
+        # Idempotent (voir sync_amicaux dans scrape_ffhb_club.py) : ne fait rien si rien de
+        # nouveau.
+        run: python scraper/scrape_ffhb_club.py sync-amicaux --mapping-dir scraper --outdir data
+
       - name: Sauvegarder un instantané quotidien du classement (historique)
         # Nécessaire pour calculer l'évolution du classement (+1/-1) dans la future news hebdo
         # "résultats du week-end" (site SportsRégions) : classements_club.csv est écrasé chaque

@@ -240,6 +240,124 @@ FR_MONTHS = {
     "juillet": 7, "août": 8, "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11,
     "décembre": 12, "decembre": 12,
 }
+FR_MONTHS_FULL = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+                   "septembre", "octobre", "novembre", "décembre"]
+FR_WEEKDAYS_FULL = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+MATCHS_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vQvskuueB25qKj0hbDWjFPomFdhfWRduUsNLp6Kv-za4t4oXcbbLsLrNsjwIt0ZH7C9B75pYBGDJfQu/"
+    "pub?output=csv"
+)
+
+def format_confirmed_date(date_ddmmyyyy: str, heure_hhmm: str) -> str:
+    """Inverse de parse_confirmed_date : (DD/MM/YYYY, HH:MM) -> "jour DD mois AAAA à HHhMM",
+    même format que celui écrit par le scraper FFHB dans data/calendrier_club.csv."""
+    d = datetime.datetime.strptime(date_ddmmyyyy.strip(), "%d/%m/%Y").date()
+    h, m = heure_hhmm.strip().split(":")
+    return f"{FR_WEEKDAYS_FULL[d.weekday()]} {d.day} {FR_MONTHS_FULL[d.month - 1]} {d.year} à {int(h):02d}H{m}"
+
+def clean_val(v) -> str:
+    """Convertit une valeur pandas en chaîne propre : "" pour NaN (piège fréquent — `v or ""`
+    NE catche PAS NaN, qui est "truthy" en Python, d'où des "nan" littéraux constatés en test),
+    sans le ".0" que pandas ajoute aux entiers d'une colonne à valeurs manquantes (dtype
+    float64, ex. un score '28.0' au lieu de '28')."""
+    if pd.isna(v):
+        return ""
+    s = str(v).strip()
+    return s[:-2] if re.match(r"^\d+\.0$", s) else s
+
+def sync_amicaux(mapping_dir: str, outdir: str) -> int:
+    """Synchronise vers data/calendrier_club.csv les matchs marqués journée="Amical" saisis à
+    la main par Julien dans la sheet "Matchs" — jamais scrapés depuis FFHB (ce ne sont pas des
+    matchs officiels), donc jamais ajoutés autrement à ce fichier, qui alimente pourtant le post
+    Instagram hebdo, la page "Calendrier & résultats" du site et la news hebdomadaire. Piège
+    "club porteur" oblige (voir CLAUDE.md), la section d'un match n'est jamais déduite du nom de
+    l'adversaire : jointure Catégorie/Genre/Index contre la sheet équipes (colonne Section),
+    même logique que le filtre par périmètre de form-score-club-2-. `phase` retrouvée via
+    team_mapping.csv si l'équipe y est déjà connue, vide sinon (non bloquant, cosmétique).
+    Idempotent : compare (section, indice, categorie, date/heure) à l'existant avant d'ajouter —
+    PAS (domicile, extérieur), dont le texte diffère souvent entre la sheet (nom brut tapé à la
+    main) et une ligne déjà présente (ex. ajoutée à la main avec le nom FFHB complet) — bug
+    trouvé en testant : ce mismatch créait des doublons silencieux."""
+    matchs = pd.read_csv(MATCHS_CSV_URL, encoding="utf-8")
+    matchs.columns = [c.strip() for c in matchs.columns]
+    amicaux = matchs[matchs["Journée"].fillna("").astype(str).str.strip().str.casefold() == "amical"]
+    if amicaux.empty:
+        print("Aucun match amical dans la sheet Matchs.")
+        return 0
+
+    equipes = pd.read_csv(SHEET_CSV_URL, encoding="utf-8")
+    equipes.columns = [c.strip() for c in equipes.columns]
+    section_index = {}
+    for _, r in equipes.iterrows():
+        key = (clean_val(r.get("Categorie")), clean_val(r.get("Genre")), clean_val(r.get("Indice équipe")))
+        section = clean_val(r.get("Section"))
+        if section:
+            section_index[key] = section
+
+    mapping_path = os.path.join(mapping_dir, "team_mapping.csv")
+    mapping = pd.read_csv(mapping_path, encoding="utf-8-sig") if os.path.exists(mapping_path) else pd.DataFrame()
+    phase_index = {}
+    for _, r in mapping.iterrows():
+        key = (clean_val(r.get("section")), clean_val(r.get("indice")), clean_val(r.get("categorie")))
+        phase_index[key] = clean_val(r.get("phase"))
+
+    cal_path = os.path.join(outdir, "calendrier_club.csv")
+    existing = pd.read_csv(cal_path, encoding="utf-8-sig") if os.path.exists(cal_path) else pd.DataFrame()
+    existing_keys = set()
+    if not existing.empty:
+        for _, r in existing.iterrows():
+            existing_keys.add((
+                clean_val(r.get("section")), clean_val(r.get("indice")), clean_val(r.get("categorie")),
+                clean_val(r.get("date/heure")),
+            ))
+
+    new_rows, skipped = [], []
+    for _, r in amicaux.iterrows():
+        code = clean_val(r.get("Code Gesthand"))
+        categorie = clean_val(r.get("Catégorie"))
+        genre = clean_val(r.get("Genre"))
+        indice = clean_val(r.get("Index"))
+        section = section_index.get((categorie, genre, indice), "")
+        date_str = clean_val(r.get("Date"))
+        heure_str = clean_val(r.get("Heure"))
+        if not section or not date_str or not heure_str:
+            skipped.append(code)
+            continue
+        try:
+            date_heure = format_confirmed_date(date_str, heure_str)
+        except ValueError:
+            skipped.append(code)
+            continue
+
+        key = (section, indice, categorie, date_heure)
+        if key in existing_keys:
+            continue  # déjà présent (run précédent), rien à faire
+
+        eq1s, eq2s = clean_val(r.get("Eq1Score")), clean_val(r.get("Eq2Score"))
+        new_rows.append({
+            "section": section, "indice": indice, "categorie": categorie,
+            "phase": phase_index.get((section, indice, categorie), ""),
+            "journée": "Amical", "date/heure": date_heure, "date_confirmee": "True",
+            "domicile": clean_val(r.get("Eq1")), "extérieur": clean_val(r.get("Eq2")),
+            "score": f"{eq1s} - {eq2s}" if eq1s and eq2s else "",
+            "gymnase": clean_val(r.get("Gymnase")), "ville": clean_val(r.get("Ville")),
+            "lien": "", "adresse_complete": "",
+        })
+        existing_keys.add(key)
+
+    if skipped:
+        print(f"  {len(skipped)} ligne(s) amicale(s) ignorée(s) (section ou date introuvable) : {skipped}")
+    if not new_rows:
+        print("Aucun nouvel amical à ajouter à calendrier_club.csv.")
+        return 0
+
+    updated = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True) if not existing.empty else pd.DataFrame(new_rows)
+    os.makedirs(outdir, exist_ok=True)
+    updated.to_csv(cal_path, index=False, encoding="utf-8-sig")
+    print(f"{len(new_rows)} match(s) amical(aux) ajoute(s) a calendrier_club.csv.")
+    return len(new_rows)
 
 def parse_confirmed_date(date_str: str):
     """Retourne (DD/MM/YYYY, HH:MM) uniquement si la date est confirmée (format complet
@@ -682,6 +800,10 @@ def main():
         p_resync.add_argument("--outdir", default="data")
         p_resync.add_argument("--teams", default="", help="IDs séparés par des virgules (vide = toutes)")
 
+        p_amicaux = sub.add_parser("sync-amicaux", help="Ajoute à calendrier_club.csv les matchs 'Amical' saisis à la main dans la sheet Matchs (jamais scrapés depuis FFHB)")
+        p_amicaux.add_argument("--mapping-dir", default="scraper")
+        p_amicaux.add_argument("--outdir", default="data")
+
         args = parser.parse_args()
         if args.command == "sync-mapping":
             sync_mapping(args.mapping_dir)
@@ -689,6 +811,8 @@ def main():
             run_club_scrape_ci(args.mapping_dir, args.outdir, args.teams)
         elif args.command == "resync-sheet":
             run_resync_sheet(args.mapping_dir, args.outdir, args.teams)
+        elif args.command == "sync-amicaux":
+            sync_amicaux(args.mapping_dir, args.outdir)
         return
 
     print("Bonjour 👋 — Scraper FFHB club")
