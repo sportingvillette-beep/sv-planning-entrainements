@@ -60,9 +60,9 @@ WEEKDAY_ABBR_FR = {0: "Lun", 1: "Mar", 2: "Mer", 3: "Jeu", 4: "Ven", 5: "Sam", 6
 # si un nouveau sigle apparaît (heuristique best-effort, cf.
 # scraper/scrape_ffhb.py où cette liste est dupliquée à l'identique).
 KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB", "RC", "IDA"}
-# Code de catégorie d'âge au format international (ex. "U18F", "M13", parfois entre
-# parenthèses "(M18)") — jamais un "mot" français normal, renvoyé tel quel en majuscules.
-# Dupliqué depuis scraper/scrape_ffhb.py, voir ce fichier pour le détail du pourquoi.
+# Code de catégorie d'âge accolé au nom d'un club adverse (ex. "IDA U18F") — retiré, pas
+# juste re-casé (pas plus légitime qu'un préfixe de poule standard). Dupliqué depuis
+# scraper/scrape_ffhb.py, voir ce fichier pour le détail du pourquoi.
 CATEGORY_CODE_RE = re.compile(r"^(\(?)([UM]\d{1,2}[FGM]?)(\)?)$", re.IGNORECASE)
 FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
 # 'la'/'le'/'les' volontairement exclus : trop souvent le début d'un nom
@@ -146,10 +146,8 @@ def title_case_fr(name: str) -> str:
         if core and core.upper() == core and core in KNOWN_ACRONYMS:
             words.append(w)
             continue
-        cat_match = CATEGORY_CODE_RE.match(w)
-        if cat_match:
-            words.append(f"{cat_match.group(1)}{cat_match.group(2).upper()}{cat_match.group(3)}")
-            continue
+        if CATEGORY_CODE_RE.match(w):
+            continue  # retiré, pas préservé — voir CATEGORY_CODE_RE ci-dessus
         lw = w.lower()
         if i > 0 and lw in FR_LOWER_WORDS:
             words.append(lw)
