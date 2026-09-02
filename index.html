@@ -177,10 +177,23 @@
   <h2>Ajouter / modifier un match amical</h2>
   <div class="subtitle" style="margin-bottom:14px;">Pour un match hors championnat FFHB (tournoi, plateau, amical) — jamais pour corriger un vrai match FFHB, qui vient automatiquement du scraper.</div>
   <div class="btn-row" style="margin-bottom:14px;">
-    <select id="amical-select" class="token-input" style="flex:1; min-width:220px;"><option value="">➕ Nouveau match amical</option></select>
+    <select id="amical-select" class="token-input" style="flex:1; min-width:220px;"><option value="">Modifier un match existant</option></select>
   </div>
   <div class="btn-row" style="margin-bottom:10px;">
-    <input id="amical-categorie" class="token-input" placeholder="Catégorie (ex. M16)" style="max-width:140px;">
+    <select id="amical-categorie" class="token-input" style="max-width:140px;">
+      <option value="">Catégorie —</option>
+      <option value="M5">M5</option>
+      <option value="M7">M7</option>
+      <option value="M9">M9</option>
+      <option value="M11">M11</option>
+      <option value="M13">M13</option>
+      <option value="M15">M15</option>
+      <option value="M16">M16</option>
+      <option value="M17">M17</option>
+      <option value="M18">M18</option>
+      <option value="Seniors">Seniors</option>
+      <option value="Loisirs">Loisirs</option>
+    </select>
     <select id="amical-genre" class="token-input" style="max-width:120px;">
       <option value="">Genre —</option>
       <option value="F">F</option>
@@ -193,19 +206,15 @@
     <input id="amical-eq1" class="token-input" placeholder="Équipe 1 (domicile)" style="flex:1; min-width:200px;">
     <input id="amical-eq2" class="token-input" placeholder="Équipe 2 (extérieur)" style="flex:1; min-width:200px;">
   </div>
-  <div class="btn-row" style="margin-bottom:10px;">
+  <div class="btn-row" style="margin-bottom:14px;">
     <input id="amical-date" type="date" class="token-input" style="max-width:170px;">
     <input id="amical-heure" type="time" class="token-input" style="max-width:120px;">
     <input id="amical-gymnase" class="token-input" placeholder="Gymnase (optionnel)" style="flex:1; min-width:160px;">
     <input id="amical-ville" class="token-input" placeholder="Ville" style="max-width:160px;">
   </div>
-  <div class="btn-row" style="margin-bottom:14px;">
-    <input id="amical-score1" type="number" min="0" class="token-input" placeholder="Score éq. 1 (si connu)" style="max-width:170px;">
-    <input id="amical-score2" type="number" min="0" class="token-input" placeholder="Score éq. 2 (si connu)" style="max-width:170px;">
-  </div>
   <div class="btn-row">
     <button onclick="saveAmicalMatch()">💾 Enregistrer</button>
-    <button class="secondary" onclick="resetAmicalForm()">🔄 Nouveau formulaire</button>
+    <button class="secondary" onclick="resetAmicalForm()">➕ Nouveau match</button>
   </div>
   <div id="status-amical" class="status"></div>
 </div>
@@ -2054,8 +2063,6 @@ function amicalFields() {
     heure: document.getElementById('amical-heure'),
     gymnase: document.getElementById('amical-gymnase'),
     ville: document.getElementById('amical-ville'),
-    score1: document.getElementById('amical-score1'),
-    score2: document.getElementById('amical-score2'),
   };
 }
 
@@ -2094,7 +2101,7 @@ async function loadAmicalSelect() {
     _amicauxByCode = {};
     (data.matches || []).forEach(m => { _amicauxByCode[m.code] = m; });
     const options = (data.matches || []).slice().sort((a, b) => (b.date_sort || '').localeCompare(a.date_sort || ''));
-    sel.innerHTML = '<option value="">➕ Nouveau match amical</option>' +
+    sel.innerHTML = '<option value="">Modifier un match existant</option>' +
       options.map(m => `<option value="${m.code}">${m.date} ${m.heure} — ${m.eq1} vs ${m.eq2}</option>`).join('');
   } catch (err) {
     console.error('Chargement liste amicaux : ', err);
@@ -2120,8 +2127,6 @@ document.addEventListener('DOMContentLoaded', () => {
     f.heure.value = m.heure || '';
     f.gymnase.value = m.gymnase || '';
     f.ville.value = m.ville || '';
-    f.score1.value = m.score1 || '';
-    f.score2.value = m.score2 || '';
     setStatusAmical('', '');
   });
 });
@@ -2145,7 +2150,6 @@ async function saveAmicalMatch() {
       code: code || '', categorie, genre: f.genre.value, indice: f.indice.value.trim(),
       eq1, eq2, date: inputDateToDdmmyyyy(dateInput), heure,
       gymnase: f.gymnase.value.trim(), ville: f.ville.value.trim(),
-      score1: f.score1.value, score2: f.score2.value,
     });
     const res = await fetch(PROGRESS_WEBAPP_URL, { method: 'POST', body });
     const data = await res.json();
