@@ -75,6 +75,17 @@
   }
   .progress-inner { background: var(--accent); height: 100%; width: 2%; transition: width .4s ease; }
 
+  /* Mode "light" (?mode=light) : page allégée diffusable à n'importe qui, ne montre que les
+     panneaux non-admin (FFHB calendrier/résultats, situation d'une équipe, matchs amicaux) —
+     jamais les boutons qui déclenchent une action (rafraîchissement FFHB, mise à jour
+     SportsRégions, news, génération de planning). Classe posée par JS sur <body> avant que le
+     reste du script ne s'exécute (voir tout en bas du fichier) : même code/données que la page
+     admin, zéro duplication, donc zéro risque de dérive entre les deux versions dans le temps.
+     Purement visuel — n'importe qui connaissant les ids pourrait retirer la classe côté
+     client, ce n'est pas une barrière de sécurité, seulement une simplification d'usage pour
+     éviter les clics accidentels sur un bouton qui écrit quelque part. */
+  body.light-mode .admin-only { display: none !important; }
+
   @media print {
     body * { visibility: hidden; }
     #result-content, #result-content * { visibility: visible; }
@@ -87,10 +98,10 @@
 </head>
 <body>
 
-<h1>🤾 Sporting Villette — Lanceur planning</h1>
-<div class="subtitle">Base équipes Google Sheet → génération des plannings en direct dans le navigateur</div>
+<h1 id="pageTitle">🤾 Sporting Villette — Lanceur planning</h1>
+<div class="subtitle" id="pageSubtitle">Base équipes Google Sheet → génération des plannings en direct dans le navigateur</div>
 
-<div class="panel-row">
+<div class="panel-row admin-only">
   <div class="panel">
     <h2>Bases de données</h2>
     <div class="btn-row">
@@ -107,7 +118,7 @@
   </div>
 </div>
 
-<div class="panel-row">
+<div class="panel-row admin-only">
   <div class="panel">
     <h2>Générer planning</h2>
     <div class="btn-row">
@@ -159,6 +170,43 @@
 </div>
 
 <div class="panel">
+  <h2>Ajouter / modifier un match amical</h2>
+  <div class="subtitle" style="margin-bottom:14px;">Pour un match hors championnat FFHB (tournoi, plateau, amical) — jamais pour corriger un vrai match FFHB, qui vient automatiquement du scraper.</div>
+  <div class="btn-row" style="margin-bottom:14px;">
+    <select id="amical-select" class="token-input" style="flex:1; min-width:220px;"><option value="">➕ Nouveau match amical</option></select>
+  </div>
+  <div class="btn-row" style="margin-bottom:10px;">
+    <input id="amical-categorie" class="token-input" placeholder="Catégorie (ex. M16)" style="max-width:140px;">
+    <select id="amical-genre" class="token-input" style="max-width:120px;">
+      <option value="">Genre —</option>
+      <option value="F">F</option>
+      <option value="G">G</option>
+      <option value="Mixte">Mixte</option>
+    </select>
+    <input id="amical-indice" class="token-input" placeholder="Indice (ex. A, optionnel)" style="max-width:160px;">
+  </div>
+  <div class="btn-row" style="margin-bottom:10px;">
+    <input id="amical-eq1" class="token-input" placeholder="Équipe 1 (domicile)" style="flex:1; min-width:200px;">
+    <input id="amical-eq2" class="token-input" placeholder="Équipe 2 (extérieur)" style="flex:1; min-width:200px;">
+  </div>
+  <div class="btn-row" style="margin-bottom:10px;">
+    <input id="amical-date" type="date" class="token-input" style="max-width:170px;">
+    <input id="amical-heure" type="time" class="token-input" style="max-width:120px;">
+    <input id="amical-gymnase" class="token-input" placeholder="Gymnase (optionnel)" style="flex:1; min-width:160px;">
+    <input id="amical-ville" class="token-input" placeholder="Ville" style="max-width:160px;">
+  </div>
+  <div class="btn-row" style="margin-bottom:14px;">
+    <input id="amical-score1" type="number" min="0" class="token-input" placeholder="Score éq. 1 (si connu)" style="max-width:170px;">
+    <input id="amical-score2" type="number" min="0" class="token-input" placeholder="Score éq. 2 (si connu)" style="max-width:170px;">
+  </div>
+  <div class="btn-row">
+    <button onclick="saveAmicalMatch()">💾 Enregistrer</button>
+    <button class="secondary" onclick="resetAmicalForm()">🔄 Nouveau formulaire</button>
+  </div>
+  <div id="status-amical" class="status"></div>
+</div>
+
+<div class="panel admin-only">
   <h2>Rafraîchir les données FFHB</h2>
   <div class="subtitle" style="margin-bottom:14px;">Rafraîchissement automatique chaque dimanche soir. Pour forcer une mise à jour immédiate, renseigne ton jeton GitHub une fois (voir note en bas de page) puis utilise le bouton ci-dessous.</div>
   <div class="btn-row" style="margin-bottom:12px;">
@@ -178,7 +226,7 @@
   </div>
 </div>
 
-<div class="panel">
+<div class="panel admin-only">
   <h2>Mettre à jour SportsRégions</h2>
   <div class="subtitle" style="margin-bottom:14px;">Pousse le contenu à jour (années de naissance, prix licence, championnat, poule, description) sur les 37 fiches équipe, et met à jour les pages "Planning entrainements" et "Calendriers, résultats, classements" du site club. Nécessite le même jeton GitHub que le rafraîchissement FFHB ci-dessus.</div>
   <div class="btn-row">
@@ -191,7 +239,7 @@
   </div>
 </div>
 
-<div class="panel">
+<div class="panel admin-only">
   <h2>News "résultats du week-end"</h2>
   <div class="subtitle" style="margin-bottom:14px;">Crée sur SportsRégions un brouillon de news (intro générée par IA + tableau des résultats + blocs photos/commentaires) pour le dernier week-end écoulé — reste "Hors ligne", à relire et publier toi-même depuis l'admin SportsRégions. Nécessite le même jeton GitHub que ci-dessus.</div>
   <div class="btn-row">
@@ -201,7 +249,7 @@
   <div id="status-weekend-news" class="status"></div>
 </div>
 
-<div class="panel" id="result-panel">
+<div class="panel admin-only" id="result-panel">
   <div id="result-toolbar">
     <span id="result-name"></span>
     <button onclick="copyResult()">📋 Copier le HTML</button>
@@ -213,7 +261,7 @@
   </div>
 </div>
 
-<div class="footer-note">
+<div class="footer-note admin-only">
   Source des données : Google Sheet publié en CSV (lecture seule, mise à jour en direct à chaque génération).<br>
   Le bouton « Copier le HTML » copie le tableau généré pour le coller sur SportsRégions ou tout autre éditeur.
   <br><br>
@@ -226,6 +274,15 @@
 </div>
 
 <script>
+// Mode "light" : ?mode=light dans l'URL masque tous les panneaux admin (voir règle CSS
+// body.light-mode .admin-only). Posé tout en haut du script, avant tout le reste, pour que
+// la classe soit sur <body> avant le 1er rendu visible.
+if (new URLSearchParams(location.search).get('mode') === 'light') {
+  document.body.classList.add('light-mode');
+  document.getElementById('pageTitle').textContent = '🤾 Sporting Villette — Résultats & matchs';
+  document.getElementById('pageSubtitle').textContent = 'Calendrier, résultats FFHB, situation d\'une équipe et saisie des matchs amicaux';
+}
+
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT3RqA-z8ANNaXXsYMgh4ynk8LV4EjOnkAqyThzFQ4TcxIUofmVlWg20wyfw-ZmeDettPCjkCgank_3/pub?output=csv";
 let currentHTML = '';
 let currentName = '';
@@ -997,6 +1054,10 @@ const GH_TOKEN_KEY = 'sv_gh_token';
 // n'est pas sensible en elle-même (seules les actions d'écriture sont protégées par secret),
 // donc on peut la mettre en dur ici pour sonder la progression d'un run en cours.
 const PROGRESS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzA8_vH6hAwZl3aBOxEtL4sKqxi10mhY6Tw0dDRLU-SHszHHui4GXSR04GX8VV15oQC/exec';
+// Même secret que CONFIG.webhookSecret dans form-score-club-2-/index.html — délibérément
+// moins sensible que le secret du scraper (voir Code.gs), sa présence dans ce JS public n'est
+// pas une nouvelle exposition.
+const WEBAPP_FORM_SECRET = 'wpFt6IaS4QDZCodB';
 
 async function fetchText(url) {
   const sep = url.includes('?') ? '&' : '?';
@@ -1971,12 +2032,135 @@ async function triggerWeekendNews() {
   }
 }
 
+// ---------- Ajouter / modifier un match amical (action Web App "save_amical_match", voir
+// Code.gs) — jamais pour un vrai match FFHB, verrouillé côté serveur (refuse toute
+// modification d'une ligne qui n'est pas déjà journée="Amical"). ----------
+let _amicauxByCode = {};
+
+function amicalFields() {
+  return {
+    categorie: document.getElementById('amical-categorie'),
+    genre: document.getElementById('amical-genre'),
+    indice: document.getElementById('amical-indice'),
+    eq1: document.getElementById('amical-eq1'),
+    eq2: document.getElementById('amical-eq2'),
+    date: document.getElementById('amical-date'),
+    heure: document.getElementById('amical-heure'),
+    gymnase: document.getElementById('amical-gymnase'),
+    ville: document.getElementById('amical-ville'),
+    score1: document.getElementById('amical-score1'),
+    score2: document.getElementById('amical-score2'),
+  };
+}
+
+function setStatusAmical(msg, cls) {
+  const el = document.getElementById('status-amical');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+function resetAmicalForm() {
+  const f = amicalFields();
+  Object.values(f).forEach(el => { el.value = ''; });
+  document.getElementById('amical-select').value = '';
+  setStatusAmical('', '');
+}
+
+// Sheet Matchs : Date au format DD/MM/YYYY, Heure HH:MM (séparés) — <input type=date/time>
+// veut AAAA-MM-JJ / HH:MM. Conversions dédiées, pas de fonction existante réutilisable (même
+// remarque que parseSheetDate côté scripts/push_weekend_news.py).
+function ddmmyyyyToInputDate(s) {
+  const m = String(s || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : '';
+}
+function inputDateToDdmmyyyy(s) {
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+
+async function loadAmicalSelect() {
+  const sel = document.getElementById('amical-select');
+  try {
+    const sep = PROGRESS_WEBAPP_URL.includes('?') ? '&' : '?';
+    const res = await fetch(PROGRESS_WEBAPP_URL + sep + 'action=list_amicaux&_=' + Date.now());
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'réponse invalide');
+    _amicauxByCode = {};
+    (data.matches || []).forEach(m => { _amicauxByCode[m.code] = m; });
+    const options = (data.matches || []).slice().sort((a, b) => (b.date_sort || '').localeCompare(a.date_sort || ''));
+    sel.innerHTML = '<option value="">➕ Nouveau match amical</option>' +
+      options.map(m => `<option value="${m.code}">${m.date} ${m.heure} — ${m.eq1} vs ${m.eq2}</option>`).join('');
+  } catch (err) {
+    console.error('Chargement liste amicaux : ', err);
+    // Non bloquant — le formulaire reste utilisable pour un nouveau match même si la liste
+    // (pour la modification) n'a pas pu charger.
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('amical-select');
+  if (sel) sel.addEventListener('change', () => {
+    const code = sel.value;
+    const f = amicalFields();
+    if (!code) { resetAmicalForm(); return; }
+    const m = _amicauxByCode[code];
+    if (!m) return;
+    f.categorie.value = m.categorie || '';
+    f.genre.value = m.genre || '';
+    f.indice.value = m.indice || '';
+    f.eq1.value = m.eq1 || '';
+    f.eq2.value = m.eq2 || '';
+    f.date.value = ddmmyyyyToInputDate(m.date);
+    f.heure.value = m.heure || '';
+    f.gymnase.value = m.gymnase || '';
+    f.ville.value = m.ville || '';
+    f.score1.value = m.score1 || '';
+    f.score2.value = m.score2 || '';
+    setStatusAmical('', '');
+  });
+});
+
+async function saveAmicalMatch() {
+  const f = amicalFields();
+  const code = document.getElementById('amical-select').value;
+  const categorie = f.categorie.value.trim();
+  const eq1 = f.eq1.value.trim();
+  const eq2 = f.eq2.value.trim();
+  const dateInput = f.date.value;
+  const heure = f.heure.value;
+  if (!categorie || !eq1 || !eq2 || !dateInput || !heure) {
+    setStatusAmical('❌ Catégorie, les 2 équipes, la date et l\'heure sont obligatoires.', 'error');
+    return;
+  }
+  setStatusAmical('⏳ Enregistrement…', '');
+  try {
+    const body = new URLSearchParams({
+      action: 'save_amical_match', secret: WEBAPP_FORM_SECRET,
+      code: code || '', categorie, genre: f.genre.value, indice: f.indice.value.trim(),
+      eq1, eq2, date: inputDateToDdmmyyyy(dateInput), heure,
+      gymnase: f.gymnase.value.trim(), ville: f.ville.value.trim(),
+      score1: f.score1.value, score2: f.score2.value,
+    });
+    const res = await fetch(PROGRESS_WEBAPP_URL, { method: 'POST', body });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'échec inconnu');
+    setStatusAmical(`✅ Match ${data.action === 'amical_updated' ? 'mis à jour' : 'ajouté'} (${data.code}).`, 'ok');
+    await loadAmicalSelect();
+    document.getElementById('amical-select').value = data.code;
+  } catch (err) {
+    setStatusAmical('❌ Erreur : ' + err.message, 'error');
+  }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
-  refreshTokenUI();
-  loadTeamCheckboxes();
+  if (!document.body.classList.contains('light-mode')) {
+    refreshTokenUI();
+    loadTeamCheckboxes();
+  }
   loadTeamSelect();
   loadWeekendSelect();
   loadLastUpdate();
+  loadAmicalSelect();
 });
 </script>
 </body>
