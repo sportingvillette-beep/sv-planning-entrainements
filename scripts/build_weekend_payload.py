@@ -59,7 +59,7 @@ WEEKDAY_ABBR_FR = {0: "Lun", 1: "Mar", 2: "Mer", 3: "Jeu", 4: "Ven", 5: "Sam", 6
 # plutôt que de les casser en 'Hbc'/'As'/'Us' (voir title_case_fr). Étendre
 # si un nouveau sigle apparaît (heuristique best-effort, cf.
 # scraper/scrape_ffhb.py où cette liste est dupliquée à l'identique).
-KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB"}
+KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB", "RC"}
 FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
 # 'la'/'le'/'les' volontairement exclus : trop souvent le début d'un nom
 # propre composé dans les noms de club/lieu FFHB (ex. "Chambéry La Motte

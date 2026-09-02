@@ -48,7 +48,7 @@ def strip_category_prefix(name: str) -> str:
 # cette liste si un nouveau sigle apparaît dans les données (heuristique
 # best-effort, pas de règle générale fiable pour les distinguer d'un mot
 # court comme 'ST' qui, lui, doit être mis en casse de titre -> 'St').
-_KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB"}
+_KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB", "RC"}
 _FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
 # 'la'/'le'/'les' volontairement exclus : trop souvent le début d'un nom
 # propre composé dans les noms de club/lieu FFHB (ex. "Chambéry La Motte
