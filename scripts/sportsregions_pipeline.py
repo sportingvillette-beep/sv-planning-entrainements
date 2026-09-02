@@ -39,8 +39,8 @@ SEL_2FA_CODE = "#code_2fa"
 SECTION_VALUES = {
     "Sporting Villette": "17255,0",
     "Entente Villette Genas": "17256,0",
-    "Entente Lyon Est Handball (F)": "17258,0",
-    "Entente Est Lyonnais (G)": "17257,0",
+    "Entente Lyon Est Handball": "17258,0",
+    "Entente Est Lyonnais": "17257,0",
 }
 # Saison sportive -> valeur du <select> (vérifié 2026-08-14)
 SAISON_VALUES = {
@@ -273,7 +273,7 @@ def main() -> None:
                 page,
                 team_id,
                 presentation_html=html,
-                section_value=SECTION_VALUES["Entente Est Lyonnais (G)"],
+                section_value=SECTION_VALUES["Entente Est Lyonnais"],
                 saison_value=SAISON_VALUES["2026-2027"],
             )
             print(f">>> Équipe {team_id} mise à jour.")

@@ -120,8 +120,8 @@ P2.Niveau, P2.Lien, P2.Poule,   (Phase 2, souvent vide en début de saison)
 ```
 Sporting Villette
 Entente Villette Genas
-Entente Lyon Est Handball (F)
-Entente Est Lyonnais (G)
+Entente Lyon Est Handball
+Entente Est Lyonnais
 ```
 
 Couleurs associées (utilisées comme code couleur dans les vues) :
@@ -129,8 +129,8 @@ Couleurs associées (utilisées comme code couleur dans les vues) :
 {
   'Sporting Villette': '#0b5e8f',
   'Entente Villette Genas': '#2f7d4f',
-  'Entente Lyon Est Handball (F)': '#a8452f',
-  'Entente Est Lyonnais (G)': '#8a5aab',
+  'Entente Lyon Est Handball': '#a8452f',
+  'Entente Est Lyonnais': '#8a5aab',
 }
 ```
 
@@ -351,7 +351,7 @@ migration à part.
 
 ### Piège important : le "club porteur" d'une entente
 
-Une entente de clubs (ex. `Entente Lyon Est Handball (F)`) fait jouer chaque
+Une entente de clubs (ex. `Entente Lyon Est Handball`) fait jouer chaque
 équipe sous licence d'un seul club membre ("club porteur"), pas sous le nom
 de l'entente. La ligue liste souvent ce club porteur (ex. `ST PRIEST
 HANDBALL`, `AS LYON CALUIRE`) plutôt que le nom de l'entente sur
