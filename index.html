@@ -75,16 +75,23 @@
   }
   .progress-inner { background: var(--accent); height: 100%; width: 2%; transition: width .4s ease; }
 
-  /* Mode "light" (?mode=light) : page allégée diffusable à n'importe qui, ne montre que les
-     panneaux non-admin (FFHB calendrier/résultats, situation d'une équipe, matchs amicaux) —
-     jamais les boutons qui déclenchent une action (rafraîchissement FFHB, mise à jour
-     SportsRégions, news, génération de planning). Classe posée par JS sur <body> avant que le
-     reste du script ne s'exécute (voir tout en bas du fichier) : même code/données que la page
-     admin, zéro duplication, donc zéro risque de dérive entre les deux versions dans le temps.
-     Purement visuel — n'importe qui connaissant les ids pourrait retirer la classe côté
-     client, ce n'est pas une barrière de sécurité, seulement une simplification d'usage pour
-     éviter les clics accidentels sur un bouton qui écrit quelque part. */
-  body.light-mode .admin-only { display: none !important; }
+  /* Mode "light" (défaut) vs "heavy" (?mode=heavy) : light est la version allégée diffusable
+     à n'importe qui, ne montre que les panneaux non-admin (FFHB calendrier/résultats,
+     situation d'une équipe, matchs amicaux) — jamais les boutons qui déclenchent une action
+     (rafraîchissement FFHB, mise à jour SportsRégions, news, génération de planning). LIGHT
+     EST LE DÉFAUT (URL nue) depuis le 2026-09-02, demande explicite de Julien : un lien nu
+     partagé ou une balise ?mode=light retirée par erreur retombe sur la version sûre, pas sur
+     l'admin — heavy doit être explicitement demandé. Classe posée par JS sur <body> avant que
+     le reste du script ne s'exécute (voir tout en bas du fichier) : même code/données que la
+     page admin, zéro duplication, donc zéro risque de dérive entre les deux versions dans le
+     temps. Purement visuel — n'importe qui connaissant le paramètre peut passer en heavy,
+     ce n'est pas une barrière de sécurité, seulement une simplification d'usage pour éviter
+     les clics accidentels sur un bouton qui écrit quelque part. */
+  body:not(.heavy-mode) .admin-only { display: none !important; }
+  /* Inverse de .admin-only : visible seulement en light (ex. le lien "retour au mode admin"),
+     jamais en heavy (déjà tout visible là-bas). */
+  .light-only { display: none; }
+  body:not(.heavy-mode) .light-only { display: inline-flex; }
 
   @media print {
     body * { visibility: hidden; }
@@ -100,6 +107,9 @@
 
 <h1 id="pageTitle">🤾 Sporting Villette — Lanceur planning</h1>
 <div class="subtitle" id="pageSubtitle">Base équipes Google Sheet → génération des plannings en direct dans le navigateur</div>
+<div class="light-only" style="margin:-14px 0 24px;">
+  <a class="btn-link" href="?mode=heavy" style="background:#2b2f38;">🛠️ Mode complet (admin)</a>
+</div>
 
 <div class="panel-row admin-only">
   <div class="panel">
@@ -275,11 +285,13 @@
 </div>
 
 <script>
-// Mode "light" : ?mode=light dans l'URL masque tous les panneaux admin (voir règle CSS
-// body.light-mode .admin-only). Posé tout en haut du script, avant tout le reste, pour que
-// la classe soit sur <body> avant le 1er rendu visible.
-if (new URLSearchParams(location.search).get('mode') === 'light') {
-  document.body.classList.add('light-mode');
+// Mode "heavy" (?mode=heavy) = admin complet. Tout le reste (URL nue, ou ?mode=light
+// explicite) = "light", le défaut depuis le 2026-09-02 (voir règle CSS
+// body:not(.heavy-mode) .admin-only). Posé tout en haut du script, avant tout le reste, pour
+// que la classe soit sur <body> avant le 1er rendu visible.
+if (new URLSearchParams(location.search).get('mode') === 'heavy') {
+  document.body.classList.add('heavy-mode');
+} else {
   document.getElementById('pageTitle').textContent = '🤾 Sporting Villette — Résultats & matchs';
   document.getElementById('pageSubtitle').textContent = 'Calendrier, résultats FFHB, situation d\'une équipe et saisie des matchs amicaux';
 }
@@ -2154,7 +2166,7 @@ async function saveAmicalMatch() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  if (!document.body.classList.contains('light-mode')) {
+  if (document.body.classList.contains('heavy-mode')) {
     refreshTokenUI();
     loadTeamCheckboxes();
   }
