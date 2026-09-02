@@ -48,7 +48,13 @@ def strip_category_prefix(name: str) -> str:
 # cette liste si un nouveau sigle apparaît dans les données (heuristique
 # best-effort, pas de règle générale fiable pour les distinguer d'un mot
 # court comme 'ST' qui, lui, doit être mis en casse de titre -> 'St').
-_KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB", "RC"}
+_KNOWN_ACRONYMS = {"HBC", "AS", "US", "CS", "ASUL", "UODL", "CSAV", "HB", "RC", "IDA"}
+# Code de catégorie d'âge au format international (ex. "U18F", "M13", parfois entre
+# parenthèses "(M18)") — jamais un "mot" français normal, donc jamais concerné par la casse
+# de titre : on le renvoie tel quel en majuscules. Sans cette règle, seule la 1re lettre est
+# mise en majuscule (déclenchée par ^/[-'’(] dans la regex de casse ci-dessous) — un code
+# comme "U18F" ressortait "U18f", le F final ne suivant aucun de ces caractères déclencheurs.
+_CATEGORY_CODE_RE = re.compile(r"^(\(?)([UM]\d{1,2}[FGM]?)(\)?)$", re.IGNORECASE)
 _FR_LOWER_WORDS = {"de", "du", "des", "et", "en"}
 # 'la'/'le'/'les' volontairement exclus : trop souvent le début d'un nom
 # propre composé dans les noms de club/lieu FFHB (ex. "Chambéry La Motte
@@ -77,6 +83,10 @@ def title_case_fr(name: str) -> str:
         core = re.sub(r"[^A-Za-zÀ-ÿ]", "", w)
         if core and core.upper() == core and core in _KNOWN_ACRONYMS:
             words.append(w)
+            continue
+        cat_match = _CATEGORY_CODE_RE.match(w)
+        if cat_match:
+            words.append(f"{cat_match.group(1)}{cat_match.group(2).upper()}{cat_match.group(3)}")
             continue
         lw = w.lower()
         if i > 0 and lw in _FR_LOWER_WORDS:
