@@ -282,9 +282,24 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
         exterieur_raw = (row.get("extérieur", "") or "").strip()
         club_name = pretty_section(section)
 
-        if our_name and our_name.casefold() == domicile_raw.casefold():
+        # "notre" côté matche soit le nom FFHB préfixé (our_name, ex. "M16F EXC - ENTENTE LYON
+        # EST HANDBALL" — cas normal, matchs scrapés) soit le nom brut de la section (club_name,
+        # ex. "Entente Lyon Est Handball") — un match ajouté à la main (amical, via
+        # sync-amicaux/le formulaire du site) n'a jamais le préfixe FFHB, Julien tape le nom du
+        # club tel quel. club_name est dérivé de LA MÊME ligne (row['section']), donc pas de
+        # risque de faux positif entre 2 sections différentes. pretty_section() appliqué aussi
+        # à domicile_raw/exterieur_raw pour la comparaison (pas pour l'affichage) : certaines
+        # lignes amicales sont tapées avec le suffixe genre inclus ("Entente Lyon Est Handball
+        # (F)"), que club_name a déjà retiré — sans ce nettoyage symétrique la comparaison
+        # échouait encore (trouvé en testant le week-end du 5-6 septembre).
+        domicile_clean = pretty_section(domicile_raw)
+        exterieur_clean = pretty_section(exterieur_raw)
+        is_dom = (our_name and our_name.casefold() == domicile_raw.casefold()) or club_name.casefold() == domicile_clean.casefold()
+        is_ext = (our_name and our_name.casefold() == exterieur_raw.casefold()) or club_name.casefold() == exterieur_clean.casefold()
+
+        if is_dom:
             recevant, visiteur, us_home = club_name, clean_opponent_label(exterieur_raw), True
-        elif our_name and our_name.casefold() == exterieur_raw.casefold():
+        elif is_ext:
             recevant, visiteur, us_home = clean_opponent_label(domicile_raw), club_name, False
         else:
             warnings.append(
