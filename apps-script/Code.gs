@@ -88,6 +88,7 @@ function doPost(e) {
       if (p.action === 'select_photo') return jsonResponse(selectPhoto(p));
       if (p.action === 'mark_story_done') return jsonResponse(markStoryDone(p));
       if (p.action === 'add_asset') return jsonResponse(addAsset(p));
+      if (p.action === 'save_amical_match') return jsonResponse(saveAmicalMatch(p));
       return jsonResponse({ ok: false, error: 'action inconnue: ' + p.action });
     }
 
@@ -130,6 +131,9 @@ function doGet(e) {
   }
   if (e.parameter.action === 'list_photos') {
     return jsonResponse(listPhotos(e.parameter.match_id));
+  }
+  if (e.parameter.action === 'list_amicaux') {
+    return jsonResponse(listAmicaux());
   }
   return jsonResponse({ ok: false, error: 'action inconnue' });
 }
@@ -216,6 +220,130 @@ function upsertMatch(m) {
 
   sheet.appendRow(newRow);
   return { ok: true, action: 'inserted' };
+}
+
+// Une cellule "Date"/"Heure" peut revenir en objet Date natif de Google Sheets (si la
+// colonne a été auto-formatée en date par Sheets à un moment) ou en simple chaîne (si jamais
+// reformatée) — jamais garanti dans un sens ou l'autre selon comment la ligne a été créée
+// (script vs saisie manuelle dans l'UI Sheets). Toujours passer par ces 2 fonctions avant de
+// renvoyer une date/heure au client, jamais supposer un type précis.
+function formatDateDDMMYYYY(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+  }
+  return String(v || '').trim();
+}
+function formatHeureHHMM(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm');
+  }
+  return String(v || '').trim();
+}
+
+/**
+ * Liste tous les matchs marqués journée="Amical" — alimente le sélecteur "modifier un match
+ * amical" de index.html (mode light comme admin). Lecture seule, pas d'authentification
+ * requise (même principe que list_photos/progress : rien de sensible, juste les infos déjà
+ * publiques du calendrier club).
+ */
+function listAmicaux() {
+  const sheet = getSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { ok: true, matches: [] };
+  const data = sheet.getRange(1, 1, lastRow, COLUMNS.length).getValues();
+  const matches = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[colIndex('Journée')]).trim().toLowerCase() !== 'amical') continue;
+    const date = formatDateDDMMYYYY(row[colIndex('Date')]);
+    matches.push({
+      code: row[colIndex('Code Gesthand')],
+      categorie: row[colIndex('Catégorie')],
+      genre: row[colIndex('Genre')],
+      indice: row[colIndex('Index')],
+      eq1: row[colIndex('Eq1')],
+      eq2: row[colIndex('Eq2')],
+      date: date,
+      heure: formatHeureHHMM(row[colIndex('Heure')]),
+      gymnase: row[colIndex('Gymnase')],
+      ville: row[colIndex('Ville')],
+      score1: row[colIndex('Eq1Score')],
+      score2: row[colIndex('Eq2Score')],
+      // AAAA-MM-JJ pour un tri chronologique correct côté client (le format DD/MM/YYYY ne
+      // se trie pas correctement en simple comparaison de chaînes).
+      date_sort: date.split('/').reverse().join('-'),
+    });
+  }
+  return { ok: true, matches: matches };
+}
+
+/**
+ * Ajoute ou modifie un match AMICAL — formulaire public (index.html, ?mode=light ou admin),
+ * FORM_SHARED_SECRET (voir doPost). Jamais pour un vrai match FFHB : une modification
+ * (code fourni) est refusée si la ligne visée n'est pas déjà journée="Amical" — empêche un
+ * formulaire public de altérer un match officiel. Un ajout (pas de code) force toujours
+ * journée="Amical" et Championnat="Tournoi amical", quoi que le client envoie.
+ */
+function saveAmicalMatch(p) {
+  if (!p.categorie) return { ok: false, error: 'catégorie manquante' };
+  if (!p.eq1 || !p.eq2) return { ok: false, error: 'les 2 équipes sont requises' };
+  if (!p.date || !p.heure) return { ok: false, error: 'date/heure requises' };
+
+  const sheet = getSheet();
+  const code = (p.code || '').trim();
+
+  if (code) {
+    const rowNumber = findRowByCode(sheet, code);
+    if (!rowNumber) return { ok: false, error: 'match introuvable: ' + code };
+    const rowRange = sheet.getRange(rowNumber, 1, 1, COLUMNS.length);
+    const current = rowRange.getValues()[0];
+    if (String(current[colIndex('Journée')]).trim().toLowerCase() !== 'amical') {
+      return { ok: false, error: "ce match n'est pas un amical — modification refusée" };
+    }
+    current[colIndex('Catégorie')] = p.categorie;
+    current[colIndex('Genre')] = p.genre || '';
+    current[colIndex('Index')] = p.indice || '';
+    current[colIndex('Eq1')] = p.eq1;
+    current[colIndex('Eq2')] = p.eq2;
+    current[colIndex('Date')] = p.date;
+    current[colIndex('Heure')] = p.heure;
+    current[colIndex('Gymnase')] = p.gymnase || '';
+    current[colIndex('Ville')] = p.ville || '';
+    if (p.score1 !== undefined && p.score1 !== '') current[colIndex('Eq1Score')] = p.score1;
+    if (p.score2 !== undefined && p.score2 !== '') current[colIndex('Eq2Score')] = p.score2;
+    rowRange.setValues([current]);
+    return { ok: true, action: 'amical_updated', code: code };
+  }
+
+  // Nouveau match : code déterministe (même convention que les amicaux déjà saisis à la
+  // main), garanti unique par suffixe -2/-3... en cas de collision.
+  const slug = String(p.ville || 'MATCH').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'MATCH';
+  const dateParts = String(p.date).split('/'); // DD/MM/YYYY
+  const dateSlug = dateParts.length === 3 ? dateParts[2] + dateParts[1] + dateParts[0] : String(p.date).replace(/\D/g, '');
+  const heureSlug = String(p.heure).replace(':', 'H');
+  const base = `AMICAL-${slug}-${dateSlug}-${heureSlug}`;
+  let newCode = base;
+  let n = 2;
+  while (findRowByCode(sheet, newCode)) { newCode = `${base}-${n}`; n++; }
+
+  const values = {
+    'Code Gesthand': newCode, 'Catégorie': p.categorie, 'Genre': p.genre || '', 'Index': p.indice || '',
+    'Championnat': 'Tournoi amical', 'Journée': 'Amical',
+    'Eq1': p.eq1, 'Eq2': p.eq2, 'Date': p.date, 'Heure': p.heure,
+    'Gymnase': p.gymnase || '', 'Ville': p.ville || '',
+  };
+  if (p.score1 !== undefined && p.score1 !== '') values['Eq1Score'] = p.score1;
+  if (p.score2 !== undefined && p.score2 !== '') values['Eq2Score'] = p.score2;
+
+  const newRow = COLUMNS.map(col => (Object.prototype.hasOwnProperty.call(values, col) ? values[col] : ''));
+  newRow[colIndex('INSTA_Cat')] = [p.categorie, p.genre].filter(Boolean).join(' ');
+  newRow[colIndex('INSTA_date')] = formatInstaDate(p.date, p.heure);
+  newRow[colIndex('INSTA_Eq1')] = p.eq1;
+  newRow[colIndex('INSTA_Eq2')] = p.eq2;
+  newRow[colIndex('Insta_Ville')] = p.ville || '';
+
+  sheet.appendRow(newRow);
+  return { ok: true, action: 'amical_inserted', code: newCode };
 }
 
 /**
