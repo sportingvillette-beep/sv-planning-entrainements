@@ -88,10 +88,6 @@
      ce n'est pas une barrière de sécurité, seulement une simplification d'usage pour éviter
      les clics accidentels sur un bouton qui écrit quelque part. */
   body:not(.heavy-mode) .admin-only { display: none !important; }
-  /* Inverse de .admin-only : visible seulement en light (ex. le lien "retour au mode admin"),
-     jamais en heavy (déjà tout visible là-bas). */
-  .light-only { display: none; }
-  body:not(.heavy-mode) .light-only { display: inline-flex; }
 
   @media print {
     body * { visibility: hidden; }
@@ -107,9 +103,6 @@
 
 <h1 id="pageTitle">🤾 Sporting Villette — Lanceur planning</h1>
 <div class="subtitle" id="pageSubtitle">Base équipes Google Sheet → génération des plannings en direct dans le navigateur</div>
-<div class="light-only" style="margin:-14px 0 24px;">
-  <a class="btn-link" href="?mode=heavy" style="background:#2b2f38;">🛠️ Mode complet (admin)</a>
-</div>
 
 <div class="panel-row admin-only">
   <div class="panel">
