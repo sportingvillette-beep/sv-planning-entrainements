@@ -268,6 +268,7 @@
     <button onclick="copyResult()">📋 Copier le HTML</button>
     <button onclick="downloadResult()">⬇️ Télécharger .html</button>
     <button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+    <button onclick="printInNewTab()">🖨️ Imprimer (isolé, plus fiable)</button>
   </div>
   <div id="result-frame-wrap">
     <div id="result-content"></div>
@@ -316,6 +317,19 @@ const SECTION_COLORS = {
   'Entente Est Lyonnais': '#8a5aab',
 };
 const DEFAULT_SECTION_COLOR = '#555555';
+
+// Le Google Sheet équipes distingue volontairement 2 sections par entente ("Entente Lyon Est
+// Handball (F)" / "(G)") — Julien l'a confirmé, ce n'est PAS une donnée sale à nettoyer dans le
+// Sheet. Mais partout où l'app traite des ÉQUIPES (couleurs par entente, Team Book, plannings,
+// filtres...), le nom d'entente attendu est le nom canonique sans genre (voir SECTION_COLORS
+// ci-dessus, et les boutons Team Book plus bas) — le genre de chaque équipe est de toute façon
+// déjà porté séparément par la colonne Genre. D'où la normalisation ici, à la lecture du Sheet
+// (buildRecords ci-dessous) : une seule fois à la source, pas de tentative éparpillée de
+// comparer avec/sans suffixe à chaque usage.
+const GENRE_SUFFIX_RE = /\s*\((F|G)\)\s*$/i;
+function stripGenreSuffix(section) {
+  return (section || '').replace(GENRE_SUFFIX_RE, '').trim();
+}
 
 const VILLE_COLORS = {
   "Villette d'Anthon": '#c0392b',
@@ -414,7 +428,7 @@ function buildRecords(rowsRaw) {
       .filter(v => v !== '');
     const clean = v => (v || '').trim();
     return {
-      section: row['Section'],
+      section: stripGenreSuffix(row['Section']),
       categorie: row['Categorie'],
       indice: row['Indice équipe'] && row['Indice équipe'].trim() !== '' ? row['Indice équipe'].trim() : null,
       genre: row['Genre'],
@@ -831,7 +845,12 @@ ${blocks}
 </div>`;
 }
 
-// ---------- 4) TEAM BOOK (page de garde + 1 page par équipe, prêt pour export PDF) ----------
+// ---------- 4) TEAM BOOK (1 page A4 par entente, toutes les catégories regroupées, prêt pour
+// impression/PDF) ----------
+// Format compact demandé par Julien (2026-09, forum des associations) : l'ancien format
+// "1 page par équipe" (carte 100x132mm) produisait 7-20 pages par entente pour l'impression —
+// bien trop pour un stand. Toutes les équipes d'une entente tiennent maintenant sur une seule
+// page A4 portrait, en grille de cartes (nombre de colonnes adapté au nombre d'équipes).
 function renderTeamBook(records, sectionName) {
   const teams = records.filter(r => r.section === sectionName);
 
@@ -851,7 +870,7 @@ function renderTeamBook(records, sectionName) {
     return g || '';
   }
 
-  function teamPage(r) {
+  function teamCard(r) {
     const label = r.categorie + (r.indice ? ' ' + r.indice : '');
     const trainRows = r.sessionsOrdered.map(s =>
       `<tr><td>${s.ville}${s.gymnase ? ' - ' + s.gymnase : ''}</td><td>${s.jour}</td><td>${s.deb}</td><td>${s.fin}</td></tr>`
@@ -874,68 +893,60 @@ function renderTeamBook(records, sectionName) {
     if (!champBlock) champBlock = `<p class="tb-empty">Non communiqué</p>`;
 
     const metaParts = [];
-    if (r.anneesNaissance) metaParts.push(`Années de naissance : ${r.anneesNaissance}`);
-    if (r.prixLicence) metaParts.push(`Prix de la licence : ${fmtPrix(r.prixLicence)}`);
+    if (r.anneesNaissance) metaParts.push(`Nées ${r.anneesNaissance}`);
+    if (r.prixLicence) metaParts.push(fmtPrix(r.prixLicence));
     metaParts.push(genreLabel(r.genre));
 
-    return `<div class="team-page">
-  <div class="tb-header">${r.section}</div>
+    return `<div class="team-card">
   <div class="tb-title">${label}</div>
   <div class="tb-meta">${metaParts.join(' &nbsp;•&nbsp; ')}</div>
-  <div class="tb-body">
-    <div class="tb-col"><div class="tb-block"><h4>Entraînements</h4>${trainBlock}</div></div>
-    <div class="tb-col">
-      <div class="tb-block"><h4>Entraîneurs</h4>${coachBlock}</div>
-      <div class="tb-block"><h4>Championnat</h4>${champBlock}</div>
-    </div>
-  </div>
+  <div class="tb-block"><h4>Entraînements</h4>${trainBlock}</div>
+  <div class="tb-block"><h4>Entraîneurs</h4>${coachBlock}</div>
+  <div class="tb-block"><h4>Championnat</h4>${champBlock}</div>
 </div>`;
   }
 
-  const coverPage = `<div class="team-page cover">
-  <div class="cover-club">SPORTING VILLETTE</div>
-  <div class="cover-date">${dateStr}</div>
-  <div class="cover-title">TEAM BOOK</div>
-  <div class="cover-sub">${sectionName}</div>
-  <div class="cover-note">Synthèse de toutes les informations par équipe</div>
-</div>`;
-
-  const pages = teams.map(teamPage).join('\n');
+  // Nombre de colonnes adapté au nombre d'équipes, pour que tout tienne sur une seule page A4
+  // quelle que soit la taille de l'entente (3 à 11 équipes en pratique, Sporting Villette avec
+  // ses catégories jeunes étant la plus fournie) — vérifié en mesurant la hauteur réelle de la
+  // grille pour chaque cas.
+  const cols = teams.length <= 4 ? 2 : (teams.length <= 8 ? 3 : 4);
+  const cards = teams.map(teamCard).join('\n');
 
   return `<div class="tb-wrapper">
 <style>
-@page { size: 100mm 132mm; margin: 0; }
+@page { size: A4 portrait; margin: 10mm; }
 .tb-wrapper { font-family: Arial, Helvetica, sans-serif; color:#111; }
-.team-page {
-  width: 100mm; min-height: 132mm; box-sizing: border-box;
-  padding: 8mm 9mm; margin: 0 auto 8mm; background:#fff;
-  border: 1px solid #ddd; page-break-after: always; break-after: page;
-  position: relative;
+.tb-header-bar { display:flex; justify-content:space-between; align-items:baseline; border-bottom:3px solid #1a1a4e; padding-bottom:6px; margin-bottom:10px; }
+.tb-header-bar .club { font-size:11px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; text-transform:uppercase; }
+.tb-header-bar .sub { font-size:18px; font-weight:900; color:#1a1a4e; }
+.tb-header-bar .date { font-size:10px; color:#666; }
+.tb-grid { display:grid; grid-template-columns: repeat(${cols}, 1fr); gap: 4mm; }
+.team-card {
+  border:1px solid #ccc; border-radius:3px; box-sizing:border-box;
+  padding:3mm 4mm; break-inside: avoid; page-break-inside: avoid;
 }
-.team-page.cover { display:flex; flex-direction:column; justify-content:center; }
-.cover-club { font-size:10px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; }
-.cover-date { position:absolute; top:8mm; right:9mm; font-size:10px; color:#1a1a4e; }
-.cover-title { font-size:30px; font-weight:900; color:#1a1a4e; margin:10px 0; line-height:0.95; }
-.cover-sub { font-size:14px; color:#1a1a4e; margin-top:6px; }
-.cover-note { font-size:10px; color:#555; margin-top:16px; }
-.tb-header { font-size:10px; color:#777; text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
-.tb-title { font-size:22px; font-weight:900; color:#1a1a4e; margin-bottom:5px; }
-.tb-meta { font-size:10.5px; color:#444; margin-bottom:12px; line-height:1.5; }
-.tb-body { display:block; }
-.tb-col { width:100%; }
-.tb-block { margin-bottom:12px; }
-.tb-block h4 { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:2px solid #1a1a4e; padding-bottom:3px; margin:0 0 6px; }
-.tb-table { border-collapse:collapse; width:100%; font-size:10.5px; }
-.tb-table th, .tb-table td { border:1px solid #ddd; padding:4px 5px; text-align:left; }
+.tb-title { font-size:14px; font-weight:900; color:#1a1a4e; margin-bottom:2px; }
+.tb-meta { font-size:8.5px; color:#444; margin-bottom:5px; line-height:1.3; }
+.tb-block { margin-bottom:5px; }
+.tb-block h4 { font-size:8.5px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:1.5px solid #1a1a4e; padding-bottom:2px; margin:0 0 3px; }
+.tb-table { border-collapse:collapse; width:100%; font-size:8.5px; }
+.tb-table th, .tb-table td { border:1px solid #ddd; padding:2px 4px; text-align:left; }
 .tb-table thead th { background:#1a1a4e; color:#fff; }
-.tb-empty { color:#999; font-style:italic; font-size:10.5px; margin:0; }
-.tb-block p { margin:3px 0; font-size:10.5px; }
+.tb-empty { color:#999; font-style:italic; font-size:8.5px; margin:0; }
+.tb-block p { margin:2px 0; font-size:8.5px; }
 @media print {
-  .team-page { border:none; margin:0; }
+  .team-card { border:none; box-shadow: inset 0 0 0 1px #ccc; }
 }
 </style>
-${coverPage}
-${pages}
+<div class="tb-header-bar">
+  <div class="club">Sporting Villette</div>
+  <div class="sub">TEAM BOOK — ${sectionName}</div>
+  <div class="date">${dateStr}</div>
+</div>
+<div class="tb-grid">
+${cards}
+</div>
 </div>`;
 }
 
@@ -1033,6 +1044,31 @@ function copyResult() {
   }).catch(() => {
     setStatus('❌ Impossible de copier automatiquement — sélectionne et copie manuellement.', 'error');
   });
+}
+
+function printInNewTab() {
+  // Alternative à window.print() : celui-ci imprime la page admin entière (masquée via
+  // visibility:hidden en CSS @media print), ce qui s'est révélé peu fiable selon Julien
+  // (marges/mise en page aléatoires selon navigateur). Un window.open() séparé serait plus
+  // propre mais se fait bloquer par le anti-popup de certains navigateurs (constaté en test) ;
+  // une iframe cachée évite ce blocage tout en donnant au résultat un document HTML isolé
+  // (donc ses propres règles @page, sans interférence avec le CSS/les autres éléments de la
+  // page admin) — bien plus fiable que le hack visibility:hidden.
+  if (!currentHTML) return;
+  let frame = document.getElementById('print-frame');
+  if (frame) frame.remove();
+  frame = document.createElement('iframe');
+  frame.id = 'print-frame';
+  frame.style.cssText = 'position:fixed; right:0; bottom:0; width:0; height:0; border:0;';
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow.document;
+  doc.open();
+  doc.write('<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>' + (currentName || 'Impression') + '</title></head><body>' + currentHTML + '</body></html>');
+  doc.close();
+  frame.onload = () => {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+  };
 }
 
 function downloadResult() {
