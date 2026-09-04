@@ -298,10 +298,29 @@ def build_payload(calendrier_source: str, team_mapping_source: str, today: date)
         # lignes amicales sont tapées avec le suffixe genre inclus ("Entente Lyon Est Handball
         # (F)"), que club_name a déjà retiré — sans ce nettoyage symétrique la comparaison
         # échouait encore (trouvé en testant le week-end du 5-6 septembre).
+        # Depuis que scrape_ffhb_club.py nettoie domicile/extérieur avant écriture dans
+        # calendrier_club.csv (title_case_fr + retrait préfixe FFHB — voir
+        # _format_clean_opponent), domicile_raw/exterieur_raw ne sont PLUS au format brut FFHB
+        # pour les matchs scrapés normaux : comparer our_name.casefold() == domicile_raw.casefold()
+        # tel quel ne matche donc plus jamais. On compare our_name nettoyé par la MÊME pipeline
+        # (clean_opponent_label, équivalent de _format_clean_opponent côté scraper) —
+        # reconstruire "club_name - indice" ne marche pas car `indice` (colonne team_mapping,
+        # ex. "A") n'a pas forcément le même format que le suffixe numérique/lettre du nom FFHB
+        # (ex. "- 1") — trouvé en testant le week-end du 16-17 septembre (4 avertissements avant
+        # ce correctif).
+        our_name_clean = clean_opponent_label(our_name) if our_name else ""
         domicile_clean = pretty_section(domicile_raw)
         exterieur_clean = pretty_section(exterieur_raw)
-        is_dom = (our_name and our_name.casefold() == domicile_raw.casefold()) or club_name.casefold() == domicile_clean.casefold()
-        is_ext = (our_name and our_name.casefold() == exterieur_raw.casefold()) or club_name.casefold() == exterieur_clean.casefold()
+        is_dom = (
+            (our_name and our_name.casefold() == domicile_raw.casefold())
+            or (our_name_clean and our_name_clean.casefold() == domicile_raw.casefold())
+            or club_name.casefold() == domicile_clean.casefold()
+        )
+        is_ext = (
+            (our_name and our_name.casefold() == exterieur_raw.casefold())
+            or (our_name_clean and our_name_clean.casefold() == exterieur_raw.casefold())
+            or club_name.casefold() == exterieur_clean.casefold()
+        )
 
         if is_dom:
             recevant, visiteur, us_home = club_name, clean_opponent_label(exterieur_raw), True

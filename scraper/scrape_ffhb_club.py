@@ -276,10 +276,19 @@ def sync_amicaux(mapping_dir: str, outdir: str) -> int:
     l'adversaire : jointure Catégorie/Genre/Index contre la sheet équipes (colonne Section),
     même logique que le filtre par périmètre de form-score-club-2-. `phase` retrouvée via
     team_mapping.csv si l'équipe y est déjà connue, vide sinon (non bloquant, cosmétique).
-    Idempotent : compare (section, indice, categorie, date/heure) à l'existant avant d'ajouter —
-    PAS (domicile, extérieur), dont le texte diffère souvent entre la sheet (nom brut tapé à la
-    main) et une ligne déjà présente (ex. ajoutée à la main avec le nom FFHB complet) — bug
-    trouvé en testant : ce mismatch créait des doublons silencieux."""
+
+    UPSERT, pas juste "ajoute si absent" : la clé de recherche (indice, categorie,
+    date/heure) exclut délibérément `section` — bug trouvé en conditions réelles (2026-09-04) :
+    si la sheet équipes change entre 2 runs (ex. suffixe genre retiré de la colonne Section),
+    une ligne déjà présente avec l'ANCIENNE section n'était plus reconnue et se faisait
+    dupliquer plutôt que mise à jour. Ici, une correspondance trouvée met à jour TOUTE la ligne
+    (section, phase, domicile, extérieur, score...) au lieu d'être ignorée — auto-corrige toute
+    incohérence de section au run suivant plutôt que de la figer en doublon.
+
+    domicile/extérieur nettoyés via _format_clean_opponent (même fonction que pour les vrais
+    matchs FFHB scrapés, voir scrape_one_mapping_row) — sans ça, un nom "sale" tapé tel quel
+    par Julien dans la sheet Matchs (ex. copié depuis Gesthand avec le préfixe de poule) reste
+    sale indéfiniment, ce nettoyage n'ayant jamais lieu pour les lignes amicales autrement."""
     matchs = pd.read_csv(MATCHS_CSV_URL, encoding="utf-8")
     matchs.columns = [c.strip() for c in matchs.columns]
     amicaux = matchs[matchs["Journée"].fillna("").astype(str).str.strip().str.casefold() == "amical"]
@@ -305,15 +314,19 @@ def sync_amicaux(mapping_dir: str, outdir: str) -> int:
 
     cal_path = os.path.join(outdir, "calendrier_club.csv")
     existing = pd.read_csv(cal_path, encoding="utf-8-sig") if os.path.exists(cal_path) else pd.DataFrame()
-    existing_keys = set()
     if not existing.empty:
-        for _, r in existing.iterrows():
-            existing_keys.add((
-                clean_val(r.get("section")), clean_val(r.get("indice")), clean_val(r.get("categorie")),
-                clean_val(r.get("date/heure")),
-            ))
+        # dtype=str ne suffit pas à l'écriture : pandas déduit quand même un dtype par colonne
+        # à la lecture (ex. "True"/"False" partout -> bool), qui refuse ensuite une
+        # assignation .at[...] avec une chaîne (LossySetitemError). Toutes les colonnes
+        # forcées en texte pour permettre n'importe quelle mise à jour cellule par cellule.
+        existing = existing.astype(str).replace("nan", "")
+    row_index_by_key = {}
+    if not existing.empty:
+        for idx, r in existing.iterrows():
+            key = (clean_val(r.get("indice")), clean_val(r.get("categorie")), clean_val(r.get("date/heure")))
+            row_index_by_key.setdefault(key, idx)  # 1re occurrence seulement, pas les doublons résiduels
 
-    new_rows, skipped = [], []
+    new_rows, updated_count, skipped = [], 0, []
     for _, r in amicaux.iterrows():
         code = clean_val(r.get("Code Gesthand"))
         categorie = clean_val(r.get("Catégorie"))
@@ -331,33 +344,41 @@ def sync_amicaux(mapping_dir: str, outdir: str) -> int:
             skipped.append(code)
             continue
 
-        key = (section, indice, categorie, date_heure)
-        if key in existing_keys:
-            continue  # déjà présent (run précédent), rien à faire
-
         eq1s, eq2s = clean_val(r.get("Eq1Score")), clean_val(r.get("Eq2Score"))
-        new_rows.append({
+        values = {
             "section": section, "indice": indice, "categorie": categorie,
             "phase": phase_index.get((section, indice, categorie), ""),
             "journée": "Amical", "date/heure": date_heure, "date_confirmee": "True",
-            "domicile": clean_val(r.get("Eq1")), "extérieur": clean_val(r.get("Eq2")),
+            "domicile": _format_clean_opponent(clean_val(r.get("Eq1"))),
+            "extérieur": _format_clean_opponent(clean_val(r.get("Eq2"))),
             "score": f"{eq1s} - {eq2s}" if eq1s and eq2s else "",
             "gymnase": clean_val(r.get("Gymnase")), "ville": clean_val(r.get("Ville")),
             "lien": "", "adresse_complete": "",
-        })
-        existing_keys.add(key)
+        }
+
+        search_key = (indice, categorie, date_heure)
+        row_idx = row_index_by_key.get(search_key)
+        if row_idx is not None:
+            changed = any(str(existing.at[row_idx, col]) != str(val) for col, val in values.items())
+            if changed:
+                for col, val in values.items():
+                    existing.at[row_idx, col] = val
+                updated_count += 1
+        else:
+            new_rows.append(values)
+            row_index_by_key[search_key] = None  # évite un doublon si 2 lignes du Sheet partagent la même clé
 
     if skipped:
         print(f"  {len(skipped)} ligne(s) amicale(s) ignorée(s) (section ou date introuvable) : {skipped}")
-    if not new_rows:
-        print("Aucun nouvel amical à ajouter à calendrier_club.csv.")
+    if not new_rows and not updated_count:
+        print("Aucun amical à ajouter ou mettre à jour dans calendrier_club.csv.")
         return 0
 
-    updated = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True) if not existing.empty else pd.DataFrame(new_rows)
+    updated = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True) if new_rows else existing
     os.makedirs(outdir, exist_ok=True)
     updated.to_csv(cal_path, index=False, encoding="utf-8-sig")
-    print(f"{len(new_rows)} match(s) amical(aux) ajoute(s) a calendrier_club.csv.")
-    return len(new_rows)
+    print(f"{len(new_rows)} match(s) amical(aux) ajoute(s), {updated_count} mis a jour dans calendrier_club.csv.")
+    return len(new_rows) + updated_count
 
 def parse_confirmed_date(date_str: str):
     """Retourne (DD/MM/YYYY, HH:MM) uniquement si la date est confirmée (format complet
