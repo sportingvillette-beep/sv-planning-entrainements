@@ -318,6 +318,19 @@ const SECTION_COLORS = {
 };
 const DEFAULT_SECTION_COLOR = '#555555';
 
+// Le Google Sheet équipes distingue volontairement 2 sections par entente ("Entente Lyon Est
+// Handball (F)" / "(G)") — Julien l'a confirmé, ce n'est PAS une donnée sale à nettoyer dans le
+// Sheet. Mais partout où l'app traite des ÉQUIPES (couleurs par entente, Team Book, plannings,
+// filtres...), le nom d'entente attendu est le nom canonique sans genre (voir SECTION_COLORS
+// ci-dessus, et les boutons Team Book plus bas) — le genre de chaque équipe est de toute façon
+// déjà porté séparément par la colonne Genre. D'où la normalisation ici, à la lecture du Sheet
+// (buildRecords ci-dessous) : une seule fois à la source, pas de tentative éparpillée de
+// comparer avec/sans suffixe à chaque usage.
+const GENRE_SUFFIX_RE = /\s*\((F|G)\)\s*$/i;
+function stripGenreSuffix(section) {
+  return (section || '').replace(GENRE_SUFFIX_RE, '').trim();
+}
+
 const VILLE_COLORS = {
   "Villette d'Anthon": '#c0392b',
   'Meyzieu': '#5dade2',
@@ -415,7 +428,7 @@ function buildRecords(rowsRaw) {
       .filter(v => v !== '');
     const clean = v => (v || '').trim();
     return {
-      section: row['Section'],
+      section: stripGenreSuffix(row['Section']),
       categorie: row['Categorie'],
       indice: row['Indice équipe'] && row['Indice équipe'].trim() !== '' ? row['Indice équipe'].trim() : null,
       genre: row['Genre'],
