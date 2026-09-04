@@ -906,46 +906,61 @@ function renderTeamBook(records, sectionName) {
 </div>`;
   }
 
-  // Max 3 colonnes (demande explicite de Julien, 2026-09-04 : 4 colonnes rendait les cartes
-  // trop petites/serrées) — 2 colonnes pour les petites ententes, 3 au-delà, quel que soit le
-  // nombre d'équipes (jusqu'à 12 en pratique, Entente Lyon Est Handball une fois F+G réunies).
-  const cols = teams.length <= 4 ? 2 : 3;
-  const cards = teams.map(teamCard).join('\n');
+  // Toujours 3 colonnes (demande de Julien, 2026-09-04 : 4 colonnes rendait les cartes trop
+  // petites). Max 9 équipes par page (grille 3x3) pour garder une police lisible — une entente
+  // avec plus de 9 équipes (ex. Entente Lyon Est Handball, F+G réunies) déborde sur une 2e page
+  // plutôt que de resserrer encore la mise en page (Julien a explicitement préféré lisibilité à
+  // "tout sur 1 page à tout prix").
+  const PAGE_SIZE = 9;
+  const pages = [];
+  for (let i = 0; i < teams.length; i += PAGE_SIZE) pages.push(teams.slice(i, i + PAGE_SIZE));
+
+  function headerBar(pageIdx, pageCount) {
+    const pageNote = pageCount > 1 ? ` <span class="pageno">(page ${pageIdx + 1}/${pageCount})</span>` : '';
+    return `<div class="tb-header-bar">
+  <div class="club">Sporting Villette</div>
+  <div class="sub">TEAM BOOK — ${sectionName}${pageNote}</div>
+  <div class="date">${dateStr}</div>
+</div>`;
+  }
+
+  const pagesHTML = pages.map((pageTeams, i) => `<div class="tb-page">
+${headerBar(i, pages.length)}
+<div class="tb-grid">
+${pageTeams.map(teamCard).join('\n')}
+</div>
+</div>`).join('\n');
 
   return `<div class="tb-wrapper">
 <style>
 @page { size: A4 portrait; margin: 10mm; }
 .tb-wrapper { font-family: Arial, Helvetica, sans-serif; color:#111; }
-.tb-header-bar { display:flex; justify-content:space-between; align-items:baseline; border-bottom:3px solid #1a1a4e; padding-bottom:6px; margin-bottom:10px; }
-.tb-header-bar .club { font-size:11px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; text-transform:uppercase; }
-.tb-header-bar .sub { font-size:18px; font-weight:900; color:#1a1a4e; }
-.tb-header-bar .date { font-size:10px; color:#666; }
-.tb-grid { display:grid; grid-template-columns: repeat(${cols}, 1fr); gap: 3mm; }
+.tb-page { break-after: page; page-break-after: always; }
+.tb-page:last-child { break-after: auto; page-break-after: auto; }
+.tb-header-bar { display:flex; justify-content:space-between; align-items:baseline; border-bottom:3px solid #1a1a4e; padding-bottom:6px; margin-bottom:12px; }
+.tb-header-bar .club { font-size:12px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; text-transform:uppercase; }
+.tb-header-bar .sub { font-size:19px; font-weight:900; color:#1a1a4e; }
+.tb-header-bar .sub .pageno { font-size:12px; font-weight:normal; color:#666; }
+.tb-header-bar .date { font-size:11px; color:#666; }
+.tb-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
 .team-card {
   border:1px solid #ccc; border-radius:3px; box-sizing:border-box;
-  padding:2.5mm 3.5mm; break-inside: avoid; page-break-inside: avoid;
+  padding:3mm 4mm; break-inside: avoid; page-break-inside: avoid;
 }
-.tb-title { font-size:13px; font-weight:900; color:#1a1a4e; margin-bottom:1px; }
-.tb-meta { font-size:8px; color:#444; margin-bottom:4px; line-height:1.25; }
-.tb-block { margin-bottom:4px; }
-.tb-block h4 { font-size:8px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:1.5px solid #1a1a4e; padding-bottom:1px; margin:0 0 2px; }
-.tb-table { border-collapse:collapse; width:100%; font-size:8px; }
-.tb-table th, .tb-table td { border:1px solid #ddd; padding:1.5px 4px; text-align:left; }
+.tb-title { font-size:15px; font-weight:900; color:#1a1a4e; margin-bottom:2px; }
+.tb-meta { font-size:9.5px; color:#444; margin-bottom:6px; line-height:1.35; }
+.tb-block { margin-bottom:6px; }
+.tb-block h4 { font-size:9.5px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:1.5px solid #1a1a4e; padding-bottom:2px; margin:0 0 3px; }
+.tb-table { border-collapse:collapse; width:100%; font-size:9.5px; }
+.tb-table th, .tb-table td { border:1px solid #ddd; padding:2.5px 5px; text-align:left; }
 .tb-table thead th { background:#1a1a4e; color:#fff; }
-.tb-empty { color:#999; font-style:italic; font-size:8.5px; margin:0; }
-.tb-block p { margin:2px 0; font-size:8.5px; }
+.tb-empty { color:#999; font-style:italic; font-size:9.5px; margin:0; }
+.tb-block p { margin:2px 0; font-size:9.5px; }
 @media print {
   .team-card { border:none; box-shadow: inset 0 0 0 1px #ccc; }
 }
 </style>
-<div class="tb-header-bar">
-  <div class="club">Sporting Villette</div>
-  <div class="sub">TEAM BOOK — ${sectionName}</div>
-  <div class="date">${dateStr}</div>
-</div>
-<div class="tb-grid">
-${cards}
-</div>
+${pagesHTML}
 </div>`;
 }
 
