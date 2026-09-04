@@ -89,13 +89,22 @@
      les clics accidentels sur un bouton qui écrit quelque part. */
   body:not(.heavy-mode) .admin-only { display: none !important; }
 
+  /* `visibility:hidden` (ancienne version) masque un élément mais lui laisse sa hauteur en mise
+     en page — avec tous les panneaux admin au-dessus/en dessous du résultat (Bases de données,
+     Générer planning, Team Book, FFHB, Situation d'une équipe, matchs amicaux, rafraîchissement
+     FFHB avec sa longue liste de cases à cocher, news...), ça produisait un nombre de pages
+     d'impression proportionnel à la hauteur TOTALE (invisible) de la page admin — plein de
+     pages blanches, signalé par Julien (2026-09-04). `display:none` retire vraiment l'élément
+     du flux (hauteur nulle), donc plus aucune page blanche. Corrigé ici plutôt que seulement
+     dans printInNewTab() : cette règle s'applique aussi à un Ctrl+P natif sur la page admin, pas
+     seulement au clic sur le bouton "Imprimer". */
   @media print {
-    body * { visibility: hidden; }
-    #result-content, #result-content * { visibility: visible; }
-    #result-content { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+    body > *:not(#result-panel) { display: none !important; }
+    #result-toolbar, #result-name { display: none !important; }
+    #result-panel { display: block !important; max-height: none !important; overflow: visible !important; border: none !important; background: #fff !important; padding: 0 !important; margin: 0 !important; }
     #result-frame-wrap { max-height: none !important; overflow: visible !important; background: none !important; border: none !important; }
-    #result-panel { max-height: none !important; overflow: visible !important; }
-    body { background: #fff !important; }
+    #result-content { padding: 0; }
+    body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
   }
 </style>
 </head>
@@ -893,7 +902,7 @@ function renderTeamBook(records, sectionName) {
     if (!champBlock) champBlock = `<p class="tb-empty">Non communiqué</p>`;
 
     const metaParts = [];
-    if (r.anneesNaissance) metaParts.push(`Nées ${r.anneesNaissance}`);
+    if (r.anneesNaissance) metaParts.push(`Né(e)s ${r.anneesNaissance}`);
     if (r.prixLicence) metaParts.push(fmtPrix(r.prixLicence));
     metaParts.push(genreLabel(r.genre));
 
