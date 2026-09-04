@@ -150,6 +150,7 @@
       <button onclick="generateTeamBook('Entente Villette Genas')">🤾 Entente Villette Genas</button>
       <button onclick="generateTeamBook('Entente Lyon Est Handball')">🤾 Entente Lyon Est Handball</button>
       <button onclick="generateTeamBook('Entente Est Lyonnais')">🤾 Entente Est Lyonnais</button>
+      <button class="secondary" onclick="generateAllTeamBooks()">🖨️ Les 4 ententes (un seul PDF)</button>
     </div>
     <div id="status-tb" class="status"></div>
   </div>
@@ -860,8 +861,11 @@ ${blocks}
 // "1 page par équipe" (carte 100x132mm) produisait 7-20 pages par entente pour l'impression —
 // bien trop pour un stand. Toutes les équipes d'une entente tiennent maintenant sur une seule
 // page A4 portrait, en grille de cartes (nombre de colonnes adapté au nombre d'équipes).
-function renderTeamBook(records, sectionName) {
-  const teams = records.filter(r => r.section === sectionName);
+// `sectionNames` : un nom d'entente, ou un tableau de plusieurs noms pour tout générer d'un
+// coup (voir generateAllTeamBooks) — dans ce cas un saut de page est forcé entre chaque entente,
+// en plus de la pagination déjà en place à l'intérieur de chacune (9 équipes/page).
+function renderTeamBook(records, sectionNames) {
+  const names = Array.isArray(sectionNames) ? sectionNames : [sectionNames];
 
   const today = new Date();
   const dateStr = today.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -921,10 +925,8 @@ function renderTeamBook(records, sectionName) {
   // plutôt que de resserrer encore la mise en page (Julien a explicitement préféré lisibilité à
   // "tout sur 1 page à tout prix").
   const PAGE_SIZE = 9;
-  const pages = [];
-  for (let i = 0; i < teams.length; i += PAGE_SIZE) pages.push(teams.slice(i, i + PAGE_SIZE));
 
-  function headerBar(pageIdx, pageCount) {
+  function headerBar(sectionName, pageIdx, pageCount) {
     const pageNote = pageCount > 1 ? ` <span class="pageno">(page ${pageIdx + 1}/${pageCount})</span>` : '';
     return `<div class="tb-header-bar">
   <div class="club">Sporting Villette</div>
@@ -933,19 +935,37 @@ function renderTeamBook(records, sectionName) {
 </div>`;
   }
 
-  const pagesHTML = pages.map((pageTeams, i) => `<div class="tb-page">
-${headerBar(i, pages.length)}
+  // Construit la liste À PLAT de toutes les pages, toutes ententes confondues, pour pouvoir
+  // forcer un saut de page entre chaque page ET entre chaque entente d'un même geste (seule la
+  // toute dernière page du tout dernier nom ne force pas de saut après elle — sinon impression
+  // d'une page blanche finale).
+  const allPages = [];
+  for (const sectionName of names) {
+    const teams = records.filter(r => r.section === sectionName);
+    if (!teams.length) continue;
+    const chunks = [];
+    for (let i = 0; i < teams.length; i += PAGE_SIZE) chunks.push(teams.slice(i, i + PAGE_SIZE));
+    chunks.forEach((chunkTeams, idx) => {
+      allPages.push({ sectionName, teams: chunkTeams, pageIdx: idx, pageCount: chunks.length });
+    });
+  }
+
+  const pagesHTML = allPages.map((pg, i) => {
+    const isLast = i === allPages.length - 1;
+    return `<div class="tb-page${isLast ? ' tb-page-last' : ''}">
+${headerBar(pg.sectionName, pg.pageIdx, pg.pageCount)}
 <div class="tb-grid">
-${pageTeams.map(teamCard).join('\n')}
+${pg.teams.map(teamCard).join('\n')}
 </div>
-</div>`).join('\n');
+</div>`;
+  }).join('\n');
 
   return `<div class="tb-wrapper">
 <style>
 @page { size: A4 portrait; margin: 10mm; }
 .tb-wrapper { font-family: Arial, Helvetica, sans-serif; color:#111; }
 .tb-page { break-after: page; page-break-after: always; }
-.tb-page:last-child { break-after: auto; page-break-after: auto; }
+.tb-page.tb-page-last { break-after: auto; page-break-after: auto; }
 .tb-header-bar { display:flex; justify-content:space-between; align-items:baseline; border-bottom:3px solid #1a1a4e; padding-bottom:6px; margin-bottom:12px; }
 .tb-header-bar .club { font-size:12px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; text-transform:uppercase; }
 .tb-header-bar .sub { font-size:19px; font-weight:900; color:#1a1a4e; }
@@ -1047,6 +1067,45 @@ async function generateTeamBook(sectionName) {
     document.getElementById('result-name').textContent = name + ' (' + teamCount + ' équipes)';
     document.getElementById('result-panel').style.display = 'block';
     statusEl.textContent = '✅ Team Book généré (' + teamCount + ' équipes). Clique "Imprimer / Enregistrer en PDF" ci-dessous.';
+    statusEl.className = 'status ok';
+    document.getElementById('result-panel').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    console.error(err);
+    let hint = '';
+    if (String(err).includes('Failed to fetch') || String(err).includes('TypeError')) {
+      hint = ' — vérifie que l\'onglet est bien publié (Fichier > Partager > Publier sur le web > CSV) et que le lien est à jour.';
+    }
+    statusEl.textContent = '❌ Erreur : ' + err.message + hint;
+    statusEl.className = 'status error';
+  }
+}
+
+async function generateAllTeamBooks() {
+  // Les 4 boutons Team Book (1 par entente) réutilisent SECTION_COLORS comme unique liste de
+  // référence des ententes — pas de 2e liste à maintenir en double.
+  const sectionNames = Object.keys(SECTION_COLORS);
+  const statusEl = document.getElementById('status-tb');
+  statusEl.className = 'status'; statusEl.textContent = '⏳ Récupération des données depuis Google Sheet...';
+  document.getElementById('result-panel').style.display = 'none';
+  try {
+    const csvText = await fetchCSV();
+    const rows = parseCSV(csvText);
+    if (!rows.length) throw new Error('Aucune ligne lue dans le CSV.');
+    const records = buildRecords(rows);
+    const counts = sectionNames.map(s => ({ s, n: records.filter(r => r.section === s).length }));
+    const totalTeams = counts.reduce((sum, c) => sum + c.n, 0);
+    if (!totalTeams) throw new Error('Aucune équipe trouvée pour aucune des 4 ententes.');
+
+    const html = renderTeamBook(records, sectionNames);
+    const name = 'teambook_toutes_ententes.html';
+
+    currentHTML = html;
+    currentName = name;
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-name').textContent = name + ' (' + totalTeams + ' équipes, 4 ententes)';
+    document.getElementById('result-panel').style.display = 'block';
+    const detail = counts.map(c => `${c.s} : ${c.n}`).join(' • ');
+    statusEl.textContent = '✅ Team Book généré pour les 4 ententes (' + totalTeams + ' équipes — ' + detail + '). Clique "Imprimer / Enregistrer en PDF" ci-dessous.';
     statusEl.className = 'status ok';
     document.getElementById('result-panel').scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
