@@ -906,11 +906,10 @@ function renderTeamBook(records, sectionName) {
 </div>`;
   }
 
-  // Nombre de colonnes adapté au nombre d'équipes, pour que tout tienne sur une seule page A4
-  // quelle que soit la taille de l'entente (3 à 11 équipes en pratique, Sporting Villette avec
-  // ses catégories jeunes étant la plus fournie) — vérifié en mesurant la hauteur réelle de la
-  // grille pour chaque cas.
-  const cols = teams.length <= 4 ? 2 : (teams.length <= 8 ? 3 : 4);
+  // Max 3 colonnes (demande explicite de Julien, 2026-09-04 : 4 colonnes rendait les cartes
+  // trop petites/serrées) — 2 colonnes pour les petites ententes, 3 au-delà, quel que soit le
+  // nombre d'équipes (jusqu'à 12 en pratique, Entente Lyon Est Handball une fois F+G réunies).
+  const cols = teams.length <= 4 ? 2 : 3;
   const cards = teams.map(teamCard).join('\n');
 
   return `<div class="tb-wrapper">
@@ -921,17 +920,17 @@ function renderTeamBook(records, sectionName) {
 .tb-header-bar .club { font-size:11px; letter-spacing:1px; color:#1a1a4e; font-weight:bold; text-transform:uppercase; }
 .tb-header-bar .sub { font-size:18px; font-weight:900; color:#1a1a4e; }
 .tb-header-bar .date { font-size:10px; color:#666; }
-.tb-grid { display:grid; grid-template-columns: repeat(${cols}, 1fr); gap: 4mm; }
+.tb-grid { display:grid; grid-template-columns: repeat(${cols}, 1fr); gap: 3mm; }
 .team-card {
   border:1px solid #ccc; border-radius:3px; box-sizing:border-box;
-  padding:3mm 4mm; break-inside: avoid; page-break-inside: avoid;
+  padding:2.5mm 3.5mm; break-inside: avoid; page-break-inside: avoid;
 }
-.tb-title { font-size:14px; font-weight:900; color:#1a1a4e; margin-bottom:2px; }
-.tb-meta { font-size:8.5px; color:#444; margin-bottom:5px; line-height:1.3; }
-.tb-block { margin-bottom:5px; }
-.tb-block h4 { font-size:8.5px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:1.5px solid #1a1a4e; padding-bottom:2px; margin:0 0 3px; }
-.tb-table { border-collapse:collapse; width:100%; font-size:8.5px; }
-.tb-table th, .tb-table td { border:1px solid #ddd; padding:2px 4px; text-align:left; }
+.tb-title { font-size:13px; font-weight:900; color:#1a1a4e; margin-bottom:1px; }
+.tb-meta { font-size:8px; color:#444; margin-bottom:4px; line-height:1.25; }
+.tb-block { margin-bottom:4px; }
+.tb-block h4 { font-size:8px; text-transform:uppercase; letter-spacing:.5px; color:#1a1a4e; border-bottom:1.5px solid #1a1a4e; padding-bottom:1px; margin:0 0 2px; }
+.tb-table { border-collapse:collapse; width:100%; font-size:8px; }
+.tb-table th, .tb-table td { border:1px solid #ddd; padding:1.5px 4px; text-align:left; }
 .tb-table thead th { background:#1a1a4e; color:#fff; }
 .tb-empty { color:#999; font-style:italic; font-size:8.5px; margin:0; }
 .tb-block p { margin:2px 0; font-size:8.5px; }
